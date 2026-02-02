@@ -1,6 +1,6 @@
 import fire
 
-from .evaluate_hf import evaluate_model_hf
+from .evaluate import evaluate
 from .training import train
 
 
@@ -9,7 +9,8 @@ class App:
         return train(**kwargs)
 
     def evaluate(self, **kwargs):
-        return evaluate_model_hf(**kwargs)
+        return evaluate(**kwargs)
+
 
 def main():
     fire.Fire(App)

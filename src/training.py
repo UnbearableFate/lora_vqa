@@ -96,7 +96,6 @@ def train(
     eval_batch_size: Optional[int] = None,
     logging_steps: int = 50,
     eval_steps: int = 500,
-    save_steps: int = 500,
     seed: int = 42,
     use_wandb: bool = False,
     wandb_online: bool = False,
@@ -134,7 +133,6 @@ def train(
 
     max_steps = _coerce_int(max_steps)
     eval_steps = _coerce_int(eval_steps) or eval_steps
-    save_steps = _coerce_int(save_steps) or save_steps
     logging_steps = _coerce_int(logging_steps) or logging_steps
 
     target_modules_list = _parse_list(target_modules) or []
@@ -217,7 +215,6 @@ def train(
                 "global_batch_size": global_batch_size,
                 "per_device_batch_size": per_device_batch_size,
                 "eval_steps": eval_steps,
-                "save_steps": save_steps,
                 "logging_steps": logging_steps,
                 "seed": seed,
                 "fp16": fp16,
@@ -245,8 +242,9 @@ def train(
         attn_implementation=attn_implementation,
     )
 
-    dataset = load_and_preprocess_dataset(dataset_name, subset_name)
-    print(dataset["train"].column_names)
+    print(f"Loading and preprocessing dataset {dataset_name} with subset {subset_name}")
+    train_dataset, val_dataset, _ = load_and_preprocess_dataset(dataset_name, subset_name, splits=["train", "val" if not skip_eval else "none"], num_proc=8)
+    print(train_dataset.column_names)
 
     if gradient_checkpointing:
         model.gradient_checkpointing_enable()
@@ -284,7 +282,7 @@ def train(
     model = attach_vlm_lora_adapter(
         model,
         peft_config,
-        dataset["train"],
+        train_dataset,
         collator,
         init_num_samples=init_num_samples,
         batch_size=init_batch_size,
@@ -325,21 +323,24 @@ def train(
         max_steps=max_steps or -1,
         logging_steps=logging_steps,
         eval_steps=eval_steps,
-        save_steps=save_steps,
+        save_steps=eval_steps,
         bf16=bf16,
         fp16=fp16,
         gradient_checkpointing=gradient_checkpointing,
         eval_strategy="steps" if not skip_eval else "no",
         save_strategy="steps",
+        save_total_limit=2,
         report_to="wandb" if use_wandb else "none",
         remove_unused_columns=False,
         max_length=None,
         packing=False,
         assistant_only_loss=False,
+        data_seed=seed,
+        dataloader_num_workers=16,
+        dataloader_pin_memory=True,
+        dataloader_persistent_workers=True,
+        dataloader_prefetch_factor=2,
     )
-
-    train_dataset = dataset["train"]
-    val_dataset = dataset[get_val_split_name(dataset_name)]
 
     if use_cleaned_svd_ref_trainer:
         trainer = get_cleaned_svd_ref_trainer(

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-DATASET="hiyouga/geometry3k"
-MODEL_NAME="apple/FastVLM-0.5B-fp16"
+DATASET="HuggingFaceM4/DocumentVQA"
+MODEL_NAME="LiquidAI/LFM2-VL-450M"
 
 export CUDA_VISIBLE_DEVICES="0"
 
@@ -14,13 +14,13 @@ python -m src.cli train \
     --model_name "${MODEL_NAME}" \
     --seed 11 \
     --global_batch_size 16 \
-    --per_device_batch_size 1 \
+    --per_device_batch_size 8 \
     --num_train_epochs 20 \
     --learning_rate 4e-4 \
     --weight_decay 0.01 \
     --warmup_ratio 0.03 \
-    --target_modules "q_proj,k_proj,v_proj,out_proj" \
-    --lora_r 4 \
+    --target_modules "q_proj,k_proj,v_proj,out_proj,w1,w2,w3" \
+    --lora_r 16 \
     --lora_alpha 1 \
     --lora_dropout 0.01 \
     --lora_bias none \
@@ -29,7 +29,6 @@ python -m src.cli train \
     --init_num_samples 128 \
     --init_batch_size 1 \
     --eval_steps 100 \
-    --eval_batch_size 1 \
+    --eval_batch_size 8 \
     --logging_steps 20 \
     --attn_implementation "sdpa" \
-    --gradient_checkpointing true

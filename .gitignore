@@ -36,3 +36,4 @@ wandb/
 .DS_Store
 .idea/
 .vscode/
+**.log

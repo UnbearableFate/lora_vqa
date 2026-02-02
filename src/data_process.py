@@ -1,5 +1,4 @@
 from datasets import load_dataset
-from functools import partial
 import re
 
 from typing import Optional
@@ -15,6 +14,12 @@ COL_NAME_MAP = {
         "question": "query",
         "answer": "label",
     },
+    "documentvqa" : {
+            "images": "image",
+            "question": "question",
+            "answer": "answers",
+        },
+    
 }
 
 SPLIT_NAME_MAP = {
@@ -24,6 +29,11 @@ SPLIT_NAME_MAP = {
         "test": "test",
     },
     "chartqa": {
+        "train": "train",
+        "val": "val",
+        "test": "test",
+    },
+    "documentvqa": {
         "train": "train",
         "val": "val",
         "test": "test",
@@ -59,7 +69,7 @@ def _strip_inline_image_tokens(text: str) -> str:
     return text.strip()
 
 
-def preprocess_fn(data_point, dataset_name: str):
+def preprocess_fn(data_point, col_names):
     """
     Input columns:
       - example["image"]: PIL.Image / image path / dataset Image object (depending on your dataset)
@@ -69,9 +79,6 @@ def preprocess_fn(data_point, dataset_name: str):
     Output:
       - "messages": list of chat messages with typed content (image + text)
     """
-
-    col_names = get_column_names(dataset_name)
-    
     question_text = _strip_inline_image_tokens(data_point[col_names["question"]])
     
     if isinstance(data_point[col_names["answer"]], list):
@@ -98,19 +105,42 @@ def preprocess_fn(data_point, dataset_name: str):
         ]
     }
 
-def load_and_preprocess_dataset(dataset_id: str, subset_name: Optional[str] = None):
+def load_and_preprocess_dataset(dataset_id: str, subset_name: Optional[str] = None, splits: list = ["train", "val"] , num_proc: int = 16):
     dataset = load_dataset(dataset_id, subset_name)
-    remove_columns = dataset["train"].column_names
-    print("Dataset columns:", remove_columns)
-    if "images" in remove_columns:
-        remove_columns.remove("images")
-    dataset = dataset.map(
-        partial(preprocess_fn, dataset_name=dataset_id),
-        remove_columns=remove_columns,
-        num_proc=8,
-        load_from_cache_file=False,
-    )
-    return dataset
+    train_dataset, val_dataset, test_dataset = None, None, None
+    col_names = get_column_names(dataset_id)
+    if "train" in splits:
+        train_columns = list(dataset["train"].column_names)
+        if "images" in train_columns:
+            train_columns.remove("images")
+        train_dataset = dataset["train"].map(
+            preprocess_fn,
+            fn_kwargs={"col_names": col_names},
+            remove_columns=train_columns,
+            num_proc=num_proc,
+        )
+    if "val" in splits:
+        val_split_name = get_val_split_name(dataset_id)
+        val_columns = list(dataset[val_split_name].column_names)
+        if "images" in val_columns:
+            val_columns.remove("images")
+        val_dataset = dataset[val_split_name].map(
+            preprocess_fn,
+            fn_kwargs={"col_names": col_names},
+            remove_columns=val_columns,
+            num_proc=num_proc,
+        )
+    if "test" in splits:
+        test_columns = list(dataset["test"].column_names)
+        if "images" in test_columns:
+            test_columns.remove("images")
+        test_dataset = dataset["test"].map(
+            preprocess_fn,
+            fn_kwargs={"col_names": col_names},
+            remove_columns=test_columns,
+            num_proc=num_proc,
+        )
+    return train_dataset, val_dataset, test_dataset
 
 def get_val_split_name(dataset_name: str) -> str:
     key = dataset_name.split("/")[-1].lower()

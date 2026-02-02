@@ -15,7 +15,7 @@ python -m src.cli train \
     --seed 11 \
     --global_batch_size 16 \
     --per_device_batch_size 2 \
-    --num_train_epochs 20 \
+    --num_train_epochs 4 \
     --learning_rate 4e-4 \
     --weight_decay 0.01 \
     --warmup_ratio 0.03 \
@@ -30,5 +30,6 @@ python -m src.cli train \
     --init_batch_size 1 \
     --eval_steps 100 \
     --eval_batch_size 2 \
-    --logging_steps 20 \
+    --logging_steps 50 \
     --attn_implementation "sdpa" \
+    --gradient_checkpointing true \
