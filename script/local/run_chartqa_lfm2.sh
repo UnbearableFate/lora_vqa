@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DATASET="HuggingFaceM4/ChartQA"
-MODEL_NAME="LiquidAI/LFM2-VL-450M"
+MODEL_NAME="LiquidAI/LFM2.5-VL-1.6B"
 
 export CUDA_VISIBLE_DEVICES="0"
 
@@ -14,7 +14,7 @@ python -m src.cli train \
     --model_name "${MODEL_NAME}" \
     --seed 11 \
     --global_batch_size 16 \
-    --per_device_batch_size 2 \
+    --per_device_batch_size 16 \
     --num_train_epochs 4 \
     --learning_rate 4e-4 \
     --weight_decay 0.01 \
@@ -29,7 +29,5 @@ python -m src.cli train \
     --init_num_samples 128 \
     --init_batch_size 1 \
     --eval_steps 100 \
-    --eval_batch_size 2 \
+    --eval_batch_size 16 \
     --logging_steps 50 \
-    --attn_implementation "sdpa" \
-    --gradient_checkpointing true \

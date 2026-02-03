@@ -37,3 +37,5 @@ wandb/
 .idea/
 .vscode/
 **.log
+**.o**
+experiments/**

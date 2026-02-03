@@ -20,7 +20,7 @@ from .common import (
 )
 
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 def _parse_list(value: Union[str, Sequence[str], None]) -> Optional[list[str]]:
@@ -72,7 +72,6 @@ def train(
     output_dir: str = "outputs",
     subset_name: Optional[str] = None,
     trust_remote_code: bool = True,
-    image_placeholder: Optional[str] = None,
     peft_variant: str = "lora",
     lora_r: int = 16,
     lora_alpha: int = 32,
@@ -86,7 +85,7 @@ def train(
     init_seed: Optional[int] = None,
     corda_method: str = "kpm",
     learning_rate: float = 5e-4,
-    lr_scheduler_type: str = "cosine",
+    lr_scheduler_type: str = "linear",
     weight_decay: float = 0.0,
     warmup_ratio: float = 0.03,
     num_train_epochs: float = 3.0,
@@ -101,7 +100,8 @@ def train(
     wandb_online: bool = False,
     fp16: bool = False,
     bf16: bool = True,
-    attn_implementation: Optional[str] = "flash_attn_2",
+    attn_implementation: Optional[str] = "flash_attention_2",
+    use_fast: bool = True,
     compile_model: bool = False,
     gradient_checkpointing: bool = False,
     cache_dir: Optional[str] = None,
@@ -120,11 +120,6 @@ def train(
     last_epoch: int = -1,
     timestamp: Optional[str] = None,
     skip_eval: bool = False,
-    report_to: Optional[Union[str, Sequence[str]]] = None,
-    data_check: bool = False,
-    data_check_strict: bool = False,
-    data_check_max_samples: int = 10,
-    data_print_samples: int = 10,
 ):
     accelerator = Accelerator()
     set_seed(seed)
@@ -241,8 +236,9 @@ def train(
         dtype=dtype,
         attn_implementation=attn_implementation,
     )
+    if accelerator.is_main_process:
+        print(f"Model loaded {model}")
 
-    print(f"Loading and preprocessing dataset {dataset_name} with subset {subset_name}")
     train_dataset, val_dataset, _ = load_and_preprocess_dataset(dataset_name, subset_name, splits=["train", "val" if not skip_eval else "none"], num_proc=8)
     print(train_dataset.column_names)
 
@@ -370,6 +366,7 @@ def train(
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=val_dataset if not skip_eval else None,
+            processing_class=processor,
         )
 
     if compile_model and hasattr(torch, "compile"):

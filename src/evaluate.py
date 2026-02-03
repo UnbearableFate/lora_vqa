@@ -5,9 +5,10 @@ import os
 from typing import Any, Dict, List, Optional
 
 import torch
-from datasets import Dataset, load_dataset
+from datasets import load_dataset
 from peft import PeftModel
-from transformers import AutoModelForImageTextToText, AutoProcessor, pipeline, set_seed
+from tqdm import tqdm
+from transformers import AutoModelForImageTextToText, AutoProcessor, set_seed
 
 from .common import (
     append_row_to_csv,
@@ -41,20 +42,20 @@ def _resolve_dtype(bf16: bool, fp16: bool) -> Optional[torch.dtype]:
     return None
 
 
-def _resolve_torch_and_pipeline_device(device: Optional[str]) -> tuple[torch.device, int]:
+def _resolve_torch_device(device: Optional[str]) -> torch.device:
     if device:
         lowered = device.strip().lower()
         if lowered == "cpu":
-            return torch.device("cpu"), -1
+            return torch.device("cpu")
         if lowered.startswith("cuda"):
             index = 0
             if ":" in lowered:
                 index = int(lowered.split(":", maxsplit=1)[1])
-            return torch.device(f"cuda:{index}"), index
+            return torch.device(f"cuda:{index}")
         raise ValueError(f"Unsupported device={device!r}; use 'cpu' or 'cuda[:index]'.")
     if torch.cuda.is_available():
-        return torch.device("cuda:0"), 0
-    return torch.device("cpu"), -1
+        return torch.device("cuda:0")
+    return torch.device("cpu")
 
 
 def _resolve_split(dataset_name: str, eval_split: str) -> str:
@@ -73,68 +74,78 @@ def _extract_text_from_message(message: Dict[str, Any]) -> str:
     return ""
 
 
-def _extract_generated_text(raw_output: Any) -> str:
-    if isinstance(raw_output, list):
-        if not raw_output:
-            return ""
-        return _extract_generated_text(raw_output[0])
-    if isinstance(raw_output, dict):
-        generated = raw_output.get("generated_text", "")
-        if isinstance(generated, str):
-            return generated.strip()
-        if isinstance(generated, list):
-            # Some VLM pipelines return a full chat transcript.
-            for msg in reversed(generated):
-                if isinstance(msg, dict) and str(msg.get("role", "")).lower() == "assistant":
-                    text = _extract_text_from_message(msg)
-                    if text:
-                        return text
-            return str(generated).strip()
-        return str(generated).strip()
-    return str(raw_output).strip()
+def _build_batch_inputs(
+    processor: Any,
+    batch_messages: List[List[Dict[str, Any]]],
+    batch_images: List[List[Any]],
+) -> Dict[str, torch.Tensor]:
+    try:
+        return processor(
+            text=batch_messages,
+            images=batch_images,
+            return_tensors="pt",
+            padding=True,
+        )
+    except Exception:
+        if not hasattr(processor, "apply_chat_template"):
+            raise
+        rendered_prompts = [
+            processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+            for messages in batch_messages
+        ]
+        return processor(
+            text=rendered_prompts,
+            images=batch_images,
+            return_tensors="pt",
+            padding=True,
+        )
 
 
-class _VisionGenerationEvaluatorPipeline:
-    task = "text-generation"
+def _decode_predictions(
+    processor: Any,
+    generated_ids: torch.Tensor,
+    prompt_input_ids: Optional[torch.Tensor],
+) -> List[str]:
+    if prompt_input_ids is not None and generated_ids.shape[1] >= prompt_input_ids.shape[1]:
+        generated_ids = generated_ids[:, prompt_input_ids.shape[1] :]
+    if hasattr(processor, "batch_decode"):
+        decoded = processor.batch_decode(generated_ids, skip_special_tokens=True)
+    elif hasattr(processor, "tokenizer"):
+        decoded = processor.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+    else:
+        decoded = [str(v) for v in generated_ids]
+    return [text.strip() for text in decoded]
 
-    def __init__(
-        self,
-        *,
-        generation_pipe: Any,
-        model_inputs: List[Dict[str, Any]],
-        generation_kwargs: Dict[str, Any],
-    ):
-        self.generation_pipe = generation_pipe
-        self.model_inputs = model_inputs
-        self.generation_kwargs = generation_kwargs
-        self.predictions_by_id: Dict[int, str] = {}
 
-    def __call__(self, input_ids: Any, **kwargs) -> List[Dict[str, str]]:
-        if isinstance(input_ids, list):
-            sample_ids = [int(v) for v in input_ids]
-        else:
-            sample_ids = [int(input_ids)]
-        merged_kwargs = dict(self.generation_kwargs)
-        merged_kwargs.update(kwargs)
-        outputs: List[Dict[str, str]] = []
-        for sample_id in sample_ids:
-            sample = self.model_inputs[sample_id]
-            try:
-                raw = self.generation_pipe(
-                    text=sample["messages"],
-                    images=sample["images"],
-                    **merged_kwargs,
-                )
-            except TypeError:
-                raw = self.generation_pipe(
-                    sample["messages"],
-                    images=sample["images"],
-                    **merged_kwargs,
-                )
-            prediction = _extract_generated_text(raw)
-            self.predictions_by_id[sample_id] = prediction
-            outputs.append({"generated_text": prediction})
-        return outputs
+def _load_processor_with_fallback(processor_kwargs: Dict[str, Any]) -> Any:
+    try:
+        return AutoProcessor.from_pretrained(**processor_kwargs)
+    except ValueError as exc:
+        # Some model repos expose only slow tokenizer classes; retry without fast tokenizer.
+        message = str(exc)
+        if "Tokenizer class" not in message or "does not exist" not in message:
+            raise
+        if processor_kwargs.get("use_fast") is False:
+            raise
+        retry_kwargs = dict(processor_kwargs)
+        retry_kwargs["use_fast"] = False
+        print("AutoProcessor fast tokenizer load failed; retrying with use_fast=False.")
+        return AutoProcessor.from_pretrained(**retry_kwargs)
+
+
+def _configure_decoder_only_padding(processor: Any, model: Any) -> None:
+    tokenizer = getattr(processor, "tokenizer", None)
+    if tokenizer is None:
+        return
+    if getattr(model.config, "is_encoder_decoder", False):
+        return
+    if getattr(tokenizer, "padding_side", None) != "left":
+        tokenizer.padding_side = "left"
+        print("Using left padding for decoder-only generation.")
+    if getattr(tokenizer, "pad_token_id", None) is None and getattr(tokenizer, "eos_token_id", None) is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+    if getattr(model.generation_config, "pad_token_id", None) is None:
+        model.generation_config.pad_token_id = tokenizer.pad_token_id
 
 
 def _compute_local_metrics(predictions: List[str], references: List[str]) -> Dict[str, float]:
@@ -167,7 +178,7 @@ def evaluate(
     seed: int = 42,
     cache_dir: Optional[str] = None,
     csv_path_dir: Optional[str] = "experiments",
-    device: Optional[str] = None,
+    device: Optional[str] = "cuda:0",
     bf16: bool = True,
     fp16: bool = False,
     use_fast: Optional[bool] = None,
@@ -182,25 +193,19 @@ def evaluate(
     if not model_name:
         raise ValueError("model_name is required.")
 
-    try:
-        from evaluate import evaluator as hf_evaluator
-        from evaluate import load as hf_load_metric
-    except Exception as exc:
-        raise RuntimeError("The `evaluate` package is required. Please install: pip install evaluate") from exc
-
     set_seed(seed)
     dataset_id = dataset_name
     adapter_cfg = read_adapter_config(adapter_path)
 
     split_name = _resolve_split(dataset_id, eval_split)
     raw_dataset = load_dataset(dataset_id, subset_name, split=split_name, cache_dir=cache_dir)
-    _ = get_column_names(dataset_id)
+    col_names = get_column_names(dataset_id)
 
     model_inputs: List[Dict[str, Any]] = []
     references: List[str] = []
     questions: List[str] = []
     for sample in raw_dataset:
-        processed = preprocess_fn(sample, dataset_name=dataset_id)
+        processed = preprocess_fn(sample, col_names=col_names)
         user_message = processed["messages"][0]
         assistant_message = processed["messages"][1]
         model_inputs.append({"messages": [user_message], "images": processed["images"]})
@@ -209,7 +214,7 @@ def evaluate(
 
     bf16, fp16 = _resolve_precision_flags(bf16, fp16)
     dtype = _resolve_dtype(bf16, fp16)
-    torch_device, pipeline_device = _resolve_torch_and_pipeline_device(device)
+    torch_device = _resolve_torch_device(device)
 
     processor_kwargs: Dict[str, Any] = {
         "pretrained_model_name_or_path": model_name,
@@ -219,7 +224,7 @@ def evaluate(
         processor_kwargs["cache_dir"] = cache_dir
     if use_fast is not None:
         processor_kwargs["use_fast"] = use_fast
-    processor = AutoProcessor.from_pretrained(**processor_kwargs)
+    processor = _load_processor_with_fallback(processor_kwargs)
 
     model_kwargs: Dict[str, Any] = {
         "pretrained_model_name_or_path": model_name,
@@ -233,18 +238,12 @@ def evaluate(
         model_kwargs["attn_implementation"] = attn_implementation
     base_model = AutoModelForImageTextToText.from_pretrained(**model_kwargs)
     model = PeftModel.from_pretrained(base_model, adapter_path) if adapter_path else base_model
+    _configure_decoder_only_padding(processor, model)
     model.eval()
     model.to(torch_device)
 
-    generation_pipe = pipeline(
-        task="image-text-to-text",
-        model=model,
-        processor=processor,
-        device=pipeline_device,
-    )
     generation_kwargs: Dict[str, Any] = {
         "max_new_tokens": max_new_tokens,
-        "batch_size": max(1, int(eval_batch_size)),
     }
     if temperature and temperature > 0:
         generation_kwargs["do_sample"] = True
@@ -253,33 +252,29 @@ def evaluate(
     else:
         generation_kwargs["do_sample"] = False
 
-    wrapped_pipeline = _VisionGenerationEvaluatorPipeline(
-        generation_pipe=generation_pipe,
-        model_inputs=model_inputs,
-        generation_kwargs=generation_kwargs,
-    )
+    predictions: List[str] = []
+    batch_size = max(1, int(eval_batch_size))
+    batch_starts = range(0, len(model_inputs), batch_size)
+    with torch.inference_mode():
+        for start in tqdm(
+            batch_starts,
+            total=(len(model_inputs) + batch_size - 1) // batch_size,
+            desc="Evaluating",
+            unit="batch",
+        ):
+            batch_samples = model_inputs[start : start + batch_size]
+            batch_messages = [sample["messages"] for sample in batch_samples]
+            batch_images = [sample["images"] for sample in batch_samples]
+            batch_inputs = _build_batch_inputs(processor, batch_messages, batch_images)
+            batch_inputs = {
+                key: value.to(torch_device) if hasattr(value, "to") else value
+                for key, value in batch_inputs.items()
+            }
+            prompt_input_ids = batch_inputs.get("input_ids")
+            generated_ids = model.generate(**batch_inputs, **generation_kwargs)
+            predictions.extend(_decode_predictions(processor, generated_ids, prompt_input_ids))
 
-    evaluator_dataset = Dataset.from_dict(
-        {
-            "sample_id": list(range(len(model_inputs))),
-            "label": references,
-        }
-    )
-    task_evaluator = hf_evaluator("text-generation")
-    evaluator_results = task_evaluator.compute(
-        model_or_pipeline=wrapped_pipeline,
-        data=evaluator_dataset,
-        metric=hf_load_metric("exact_match"),
-        input_column="sample_id",
-        label_column="label",
-        strategy="simple",
-    )
-
-    predictions = [wrapped_pipeline.predictions_by_id.get(i, "") for i in range(len(model_inputs))]
     metrics = _compute_local_metrics(predictions, references)
-    for key, value in evaluator_results.items():
-        if key not in metrics:
-            metrics[f"evaluator_{key}"] = value
 
     base_model_name = (
         str(adapter_cfg.get("base_model_name_or_path") or model_name).split("/")[-1]
@@ -336,7 +331,7 @@ def evaluate(
         "adapter_path": adapter_path or "",
         "run_name": run_name,
         "eval_split": split_name,
-        "backend": "hf_pipeline_evaluator",
+        "backend": "hf_model_generate",
         "seed": run_fields.get("seed", seed),
         "eval_seed": seed,
         "num_samples": len(predictions),
@@ -357,7 +352,7 @@ def evaluate(
                 row[key] = json_safe(v) if isinstance(v, (dict, list)) else v
 
     append_row_to_csv(resolved_csv_path, row)
-    print(f"Eval metrics (HF pipeline + evaluator): {metrics}")
+    print(f"Eval metrics (HF model.generate): {metrics}")
     print(f"Saved CSV -> {resolved_csv_path}")
     if resolved_examples_path:
         print(f"Saved examples JSON -> {resolved_examples_path}")
