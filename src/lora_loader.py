@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, fields
 import inspect
 from pathlib import Path
+import re
 import time
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -235,10 +236,6 @@ def attach_vlm_lora_adapter(base_model,lora_cfg: LoraConfig|LoraGAConfig, train_
     sub_dataset = _select_init_subset(train_dataset, init_num_samples, seed)
     if sub_dataset is None:
         return get_peft_model(base_model, lora_cfg)
-    # data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-    # columns_to_keep = ["input_ids", "attention_mask", "labels"]
-    # columns_to_remove = [col for col in sub_dataset.column_names if col not in columns_to_keep]
-    #sub_dataset = sub_dataset.remove_columns(columns_to_remove) if columns_to_remove else sub_dataset
 
     if lora_cfg.init_lora_weights == "corda":
         return get_peft_model_with_corda(base_model, lora_cfg, sub_dataset,data_collator,accelerator=accelerator)
@@ -250,46 +247,25 @@ def attach_vlm_lora_adapter(base_model,lora_cfg: LoraConfig|LoraGAConfig, train_
 """
 use the following function in language modeling training script
 """
-def attach_lora_adapter(base_model,lora_cfg: LoraConfig|LoraGAConfig, train_dataset,tokenizer, init_num_samples:int, batch_size:int,seed: int, accelerator: Accelerator, save_dir: Path = None):
+def attach_lora_adapter(base_model,lora_cfg: LoraConfig|LoraGAConfig, train_dataset,data_collator, init_num_samples:int, batch_size:int,seed: int, accelerator: Accelerator, save_dir: Path = None):
     if lora_cfg.init_lora_weights not in ["corda", "eva", "lora_ga"]:
         return get_peft_model(base_model, lora_cfg)
     sub_dataset = _select_init_subset(train_dataset, init_num_samples, seed)
     if sub_dataset is None:
         return get_peft_model(base_model, lora_cfg)
-    # data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-    columns_to_keep = ["input_ids", "attention_mask", "labels"]
-    columns_to_remove = [col for col in sub_dataset.column_names if col not in columns_to_keep]
-    sub_dataset = sub_dataset.remove_columns(columns_to_remove) if columns_to_remove else sub_dataset
-    if str(lora_cfg.task_type).lower() == "causal_lm":
-        if "labels" in sub_dataset.column_names:
-            data_collator = CompletionDataCollator(
-                tokenizer=tokenizer,
-                pad_to_multiple_of=8,
-            )
-        else:
-            data_collator = DataCollatorForLanguageModeling(
-                tokenizer=tokenizer,
-                mlm=False,
-                pad_to_multiple_of=8,
-            )
-    else:
-        data_collator = DataCollatorWithPadding(
-            tokenizer=tokenizer,
-            pad_to_multiple_of=8,
-        )
 
     if lora_cfg.init_lora_weights == "corda":
         return get_peft_model_with_corda(base_model, lora_cfg, sub_dataset,data_collator,accelerator=accelerator)
     elif lora_cfg.init_lora_weights == "eva":
-        if batch_size > 1:
-            _ensure_model_pad_token_id(base_model, tokenizer)
+        #if batch_size > 1:
+        #    _ensure_model_pad_token_id(base_model, data_collator.tokenizer)
         return get_peft_model_with_eva(base_model, lora_cfg, sub_dataset,data_collator ,batch_size ,accelerator=accelerator)
     elif lora_cfg.init_lora_weights == "lora_ga":
         # Some decoder-only checkpoints (e.g. Qwen3) ship without a padding token in the config.
         # Transformers sequence-classification heads will error on batch_size > 1 unless
         # `model.config.pad_token_id` is set.
         if batch_size > 1:
-            _ensure_model_pad_token_id(base_model, tokenizer)
+            _ensure_model_pad_token_id(base_model, data_collator.tokenizer)
         return get_peft_model_with_lora_ga(base_model, lora_cfg, sub_dataset,data_collator ,batch_size,accelerator=accelerator)
 
 def _ensure_model_pad_token_id(base_model, tokenizer) -> None:
@@ -333,14 +309,54 @@ def freeze_lora_A_weights(peft_model):
 def get_peft_model_with_corda(base_model,lora_cfg: LoraConfig,sub_dataset,data_collator,accelerator: Accelerator):
     if preprocess_corda is None:
         raise ImportError("init_lora_weights='corda' requires a PEFT build that includes preprocess_corda.")
+
+    sub_dataset_columns = set(getattr(sub_dataset, "column_names", []) or [])
+    collator_name = type(data_collator).__name__.lower()
+    is_vlm_batch = {"messages", "images"}.issubset(sub_dataset_columns) or (
+        "visionlanguagemodeling" in collator_name
+    )
+
+    # CorDA in current PEFT assumes 2D activations in covariance hooks.
+    # Vision-tower attention often feeds 3D tensors and can crash (`t()` on 3D).
+    # For VLM conversational batches, exclude vision tower modules from CorDA init.
+    if is_vlm_batch:
+        target_modules = lora_cfg.target_modules
+        vision_excludes: List[str] = []
+        for name, module in base_model.named_modules():
+            if "vision_tower" not in name or not isinstance(module, torch.nn.Linear):
+                continue
+            target_hit = False
+            if isinstance(target_modules, str):
+                target_hit = re.fullmatch(target_modules, name) is not None
+            elif isinstance(target_modules, (list, tuple, set)):
+                target_hit = (name in target_modules) or any(name.endswith(f".{t}") for t in target_modules)
+            if target_hit:
+                vision_excludes.append(name)
+        if vision_excludes:
+            if lora_cfg.exclude_modules is None:
+                lora_cfg.exclude_modules = list(dict.fromkeys(vision_excludes))
+            elif isinstance(lora_cfg.exclude_modules, str):
+                escaped = "|".join(re.escape(m) for m in vision_excludes)
+                lora_cfg.exclude_modules = f"(?:{lora_cfg.exclude_modules})|(?:{escaped})"
+            else:
+                merged = list(lora_cfg.exclude_modules) + vision_excludes
+                lora_cfg.exclude_modules = list(dict.fromkeys(merged))
+            print(f"CorDA VLM mode: excluded {len(vision_excludes)} vision-tower target modules.")
+
+    device = accelerator.device if accelerator is not None else next(base_model.parameters()).device
+
+    def _collate_to_device(features: List[Dict[str, Any]]) -> Dict[str, Any]:
+        batch = data_collator(features)
+        return {k: (v.to(device) if hasattr(v, "to") else v) for k, v in batch.items()}
+
     calib_loader = DataLoader(
         sub_dataset,
         batch_size=1,
         shuffle=False,
-        collate_fn=data_collator,
+        collate_fn=_collate_to_device,
     )
-    base_model.to(accelerator.device)
-    device = base_model.device
+    if accelerator is not None:
+        base_model.to(accelerator.device)
     print(f"Running Corda preprocessing on device: {device}")
     #calib_loader = accelerator.prepare(calib_loader)
 
@@ -352,7 +368,8 @@ def get_peft_model_with_corda(base_model,lora_cfg: LoraConfig,sub_dataset,data_c
         #     batch = {k: (v.to(device) if hasattr(v, "to") else v) for k, v in batch.items()}
         #     base_model(**batch)
         for batch in tqdm.tqdm(calib_loader, desc="corda preprocessing"):
-            batch = {k: v.to(device) for k, v in batch.items()}
+            if isinstance(batch, dict) and "labels" in batch:
+                batch = {k: v for k, v in batch.items() if k != "labels"}
             base_model(**batch)
         if was_training:
             base_model.train()
@@ -405,26 +422,40 @@ def get_peft_model_with_eva(
             return model(**model_input)
         return model(model_input)
 
-    is_vision_batch = ("pixel_values" in getattr(sub_dataset, "column_names", [])) and (
-        "input_ids" not in getattr(sub_dataset, "column_names", [])
+    sub_dataset_columns = set(getattr(sub_dataset, "column_names", []) or [])
+    collator_name = type(data_collator).__name__.lower()
+    is_vlm_batch = {"messages", "images"}.issubset(sub_dataset_columns) or (
+        "visionlanguagemodeling" in collator_name
     )
+    try:
+        if len(sub_dataset) > 0 and hasattr(sub_dataset, "__getitem__"):
+            sample_batch = _collate_to_device([sub_dataset[0]])
+            if isinstance(sample_batch, dict) and "pixel_values" in sample_batch:
+                is_vlm_batch = True
+    except Exception:
+        # Fall back to dataset/collator heuristics above.
+        pass
 
     init_kwargs: Dict[str, Any] = {}
     try:
         sig = inspect.signature(initialize_lora_eva_weights)
         if "forward_fn" in sig.parameters:
             init_kwargs["forward_fn"] = _forward_fn
-        if is_vision_batch and "prepare_model_inputs_fn" in sig.parameters:
+        if is_vlm_batch and "prepare_model_inputs_fn" in sig.parameters:
             init_kwargs["prepare_model_inputs_fn"] = None
-        if is_vision_batch and "prepare_layer_inputs_fn" in sig.parameters:
+        if is_vlm_batch and "prepare_layer_inputs_fn" in sig.parameters:
             init_kwargs["prepare_layer_inputs_fn"] = None
     except Exception:  # pragma: no cover
         pass
 
+    was_training = peft_model.training
+    peft_model.eval()
     try:
         initialize_lora_eva_weights(peft_model, dataloader, **init_kwargs)
     except TypeError:
         initialize_lora_eva_weights(peft_model, dataloader)
+    if was_training:
+        peft_model.train()
     return peft_model
 
 __all__ = [
@@ -458,9 +489,9 @@ def get_peft_model_with_lora_ga(
         model=model,
         dataloader=gradient_loader,
         accelerator=accelerator,
-        quant_flag=False,
-        origin_type=None,
-        quant_type=None,
+        quant_flag=True,
+        origin_type="bf16",
+        quant_type="int8",
         no_split_module_classes=None,
         grad_save_path=lora_ga_cfg.gradient_save_path,
     )

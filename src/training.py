@@ -276,10 +276,10 @@ def train(
     )
 
     model = attach_vlm_lora_adapter(
-        model,
-        peft_config,
-        train_dataset,
-        collator,
+        base_model= model,
+        lora_cfg= peft_config,
+        train_dataset=train_dataset,
+        data_collator=collator,
         init_num_samples=init_num_samples,
         batch_size=init_batch_size,
         seed=effective_init_seed,
