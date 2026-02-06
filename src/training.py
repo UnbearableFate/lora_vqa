@@ -10,7 +10,7 @@ from transformers import AutoModelForImageTextToText, AutoProcessor, set_seed
 from .lora_loader import LoraHyperparameters, attach_vlm_lora_adapter, get_lora_config
 from trl.trainer.sft_trainer import DataCollatorForVisionLanguageModeling
 from trl import SFTConfig, SFTTrainer
-from .data_process import get_val_split_name, load_and_preprocess_dataset
+from .data_process import get_val_split_name, load_and_preprocess_dataset, load_and_preprocess_kvasir_vqa
 from .common import (
     build_structured_output_dir,
     build_wandb_project_run_tags,
@@ -18,6 +18,8 @@ from .common import (
     normalize_init_lora_weights,
     resolve_output_dir,
 )
+
+from .cleaned_svd_ref_trainer import get_cleaned_svd_ref_trainer
 
 import logging
 logging.basicConfig(level=logging.WARNING)
@@ -79,10 +81,11 @@ def train(
     lora_bias: str = "none",
     target_modules: Union[str, Sequence[str]] = ("q_proj", "v_proj" ,"o_proj", "k_proj"),
     modules_to_save: Optional[Union[str, Sequence[str]]] = None,
+    ensure_weight_tying:  bool = False,
     init_lora_weights: Union[bool, str, None] = True,
-    init_num_samples: int = 512,
-    init_batch_size: int = 8,
-    init_seed: Optional[int] = None,
+    init_num_samples: int = 2048,
+    init_batch_size: int = 2,
+    init_seed: Optional[int] = 12034,
     corda_method: str = "kpm",
     learning_rate: float = 5e-4,
     lr_scheduler_type: str = "linear",
@@ -109,7 +112,7 @@ def train(
     adjust_lora_alpha_at: Union[str, Sequence[int]] = (2,),
     min_alpha_ratio: float = 0.8,
     max_alpha_ratio: float = 1.25,
-    repeat_n: int = 3,
+    repeat_n: int = 1,
     repeat_warmup_ratio: float = 0.03,
     repeat_decay_ratio: float = 0.03,
     repeat_end_lr_rate: float = 0.97,
@@ -123,6 +126,10 @@ def train(
 ):
     accelerator = Accelerator()
     set_seed(seed)
+    if str(use_cleaned_svd_ref_trainer).lower() in ["1", "true", "yes", "y", "on"]:
+        use_cleaned_svd_ref_trainer = True
+    else:
+        use_cleaned_svd_ref_trainer = False
 
     timestamp = timestamp or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -223,8 +230,18 @@ def train(
             },
         )
 
+    if "kvasir-vqa-x1" in dataset_name.lower():
+        train_dataset, val_dataset, _ = load_and_preprocess_kvasir_vqa(splits=["train", "val" if not skip_eval else "none"], val_set_size=1024)
+    else:
+        if "documentvqa" in dataset_name.lower():
+            rgb_convert = False
+        elif "chartqa" in dataset_name.lower():
+            rgb_convert = True
+        train_dataset, val_dataset, _ = load_and_preprocess_dataset(dataset_name, subset_name, splits=["train", "val" if not skip_eval else "none"], num_proc=8 ,rgb_convert=rgb_convert)
+    print(train_dataset.column_names)
+    
     ### Load model and dataset
-
+    accelerator.wait_for_everyone()
     processor = AutoProcessor.from_pretrained(
         pretrained_model_name_or_path=model_name,
         trust_remote_code=trust_remote_code,
@@ -236,11 +253,6 @@ def train(
         dtype=dtype,
         attn_implementation=attn_implementation,
     )
-    if accelerator.is_main_process:
-        print(f"Model loaded {model}")
-
-    train_dataset, val_dataset, _ = load_and_preprocess_dataset(dataset_name, subset_name, splits=["train", "val" if not skip_eval else "none"], num_proc=8)
-    print(train_dataset.column_names)
 
     if gradient_checkpointing:
         model.gradient_checkpointing_enable()
@@ -254,6 +266,8 @@ def train(
         dropout=lora_dropout,
         bias=lora_bias,
         target_modules=target_modules_list,
+        modules_to_save=modules_to_save_list,
+        ensure_weight_tying=ensure_weight_tying,
         init_lora_weights=parsed_init_lora_weights,
         init_num_samples=init_num_samples,
         init_batch_size=init_batch_size,
@@ -265,16 +279,12 @@ def train(
         init_seed=effective_init_seed,
     )
     peft_config = get_lora_config(lora_hparams)
-    if modules_to_save_list:
-        if hasattr(peft_config, "modules_to_save"):
-            peft_config.modules_to_save = modules_to_save_list
-        else:
-            logger.warning("modules_to_save is not supported by this LoRA config.")
 
     collator = DataCollatorForVisionLanguageModeling(
         processor=processor,
     )
 
+    print(f"Starting LoRA initialization with config {peft_config}...")
     model = attach_vlm_lora_adapter(
         base_model= model,
         lora_cfg= peft_config,

@@ -106,6 +106,8 @@ class LoraHyperparameters:
     target_modules: List[str] = field(
         default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"]
     )
+    modules_to_save : Optional[Union[List[str], str]] = None
+    ensure_weight_tying : bool = False
     init_lora_weights: Union[bool, str, None] = True # ["gaussian", "eva", "olora", "pissa", "pissa_niter_[number of iters]", "corda", "loftq", "orthogonal"]
     init_num_samples: int = 512
     init_batch_size: int = 8
@@ -206,6 +208,8 @@ def get_lora_config(lora_cfg: LoraHyperparameters) -> LoraConfig | LoraGAConfig:
             init_lora_weights=lora_cfg.init_lora_weights,
             corda_config=corda_config,
             eva_config=eva_config,
+            ensure_weight_tying= lora_cfg.ensure_weight_tying,
+            modules_to_save=lora_cfg.modules_to_save,
             **_VARIANT_TO_FLAGS[variant],
         )
         
@@ -224,7 +228,6 @@ def get_lora_config(lora_cfg: LoraHyperparameters) -> LoraConfig | LoraGAConfig:
             **_VARIANT_TO_FLAGS[variant],
         )
     
-    print(f"lora config: {peft_config}")
     return peft_config
 
 """use the following function in VLM training script

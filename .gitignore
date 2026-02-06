@@ -39,4 +39,6 @@ wandb/
 **.log
 **.o**
 experiments/**
-data_cache/**
+data_cache
+data
+cache

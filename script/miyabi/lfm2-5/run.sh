@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -q regular-g
 #PBS -W group_list=xg24i002
-#PBS -l select=16:mpiprocs=1
+#PBS -l select=8:mpiprocs=1
 #PBS -l walltime=02:00:00
 #PBS -j oe
 #PBS -m abe
@@ -37,9 +37,15 @@ HF_HOME="/work/xg24i002/x10041/hf_home"
 HF_DATASETS_CACHE="/work/xg24i002/x10041/data"
 export HF_HOME HF_DATASETS_CACHE
 
-DATASET="HuggingFaceM4/ChartQA"
-MODEL_NAME="llava-hf/vip-llava-7b-hf"
-target_modules="q_proj,k_proj,v_proj,out_proj,gate_proj,up_proj,down_proj,fc,linear,lm_head"
+DATASET=${DATASET:-"HuggingFaceM4/ChartQA"}
+SEED=${SEED:-11}
+use_cleaned_svd_ref_trainer=${use_cleaned_svd_ref_trainer:-False}
+init_lora_weights=${init_lora_weights:-True}
+
+MODEL_NAME="LiquidAI/LFM2.5-VL-1.6B"
+target_modules="q_proj,k_proj,v_proj,out_proj,w1,w2,w3"
+
+
 
 timestamp=$(date +%Y%m%d-%H%M%S)
 mpirun --mca mpi_abort_print_stack 1 \
@@ -63,29 +69,33 @@ mpirun --mca mpi_abort_print_stack 1 \
                 echo "Running on rank $RANK out of $WORLD_SIZE"; \
                 '"${PYTHON_PATH}"' -m src.cli train \
                     --timestamp '"${timestamp}"' \
-                    --output_dir "output" \
+                    --output_dir "output_go" \
                     --dataset_name '"${DATASET}"' \
                     --model_name '"${MODEL_NAME}"' \
-                    --seed 11 \
+                    --seed '"${SEED}"' \
                     --global_batch_size 32 \
                     --per_device_batch_size 4 \
                     --num_train_epochs 8 \
                     --learning_rate 4e-4 \
-                    --weight_decay 0.0 \
+                    --weight_decay 0.01 \
                     --warmup_ratio 0.03 \
                     --target_modules '"${target_modules}"' \
-                    --ensure_weight_tying true \
+                    --modules_to_save "lm_head" \
                     --lora_r 16 \
                     --lora_alpha 1 \
                     --lora_dropout 0.0 \
                     --lora_bias none \
                     --peft_variant lora \
-                    --init_lora_weights true \
-                    --init_num_samples 128 \
+                    --init_lora_weights '"${init_lora_weights}"' \
+                    --init_num_samples 2048 \
                     --init_batch_size 1 \
                     --eval_steps 100 \
                     --eval_batch_size 4 \
                     --logging_steps 50 \
-                    --use_wandb true \
-                    --wandb_online true \
+                    --use_cleaned_svd_ref_trainer '"${use_cleaned_svd_ref_trainer}"' \
+                    --repeat_n 1 \
+                    --repeat_warmup_ratio 0.03 \
+                    --repeat_decay_ratio 0.03 \
+                    --repeat_end_lr_rate 0.97 \
+                    --final_warmup_ratio 0.03 \
                     '

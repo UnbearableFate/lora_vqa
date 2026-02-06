@@ -197,20 +197,31 @@ def evaluate(
     dataset_id = dataset_name
     adapter_cfg = read_adapter_config(adapter_path)
 
-    split_name = _resolve_split(dataset_id, eval_split)
-    raw_dataset = load_dataset(dataset_id, subset_name, split=split_name, cache_dir=cache_dir)
-    col_names = get_column_names(dataset_id)
-
     model_inputs: List[Dict[str, Any]] = []
     references: List[str] = []
     questions: List[str] = []
-    for sample in raw_dataset:
-        processed = preprocess_fn(sample, col_names=col_names)
-        user_message = processed["messages"][0]
-        assistant_message = processed["messages"][1]
-        model_inputs.append({"messages": [user_message], "images": processed["images"]})
-        questions.append(_extract_text_from_message(user_message))
-        references.append(_extract_text_from_message(assistant_message))
+    split_name = "test"
+    if "kvasir-vqa" in dataset_name.lower():
+        split_name = "test"
+        test_dataset = load_dataset("json", data_files={"test": "data/Kvasir-VQA-x1/Kvasir-VQA-x1-test.jsonl"}, split="test")
+        for sample in test_dataset:
+            user_message = sample["messages"][0]
+            assistant_message = sample["messages"][1]
+            model_inputs.append({"messages": [user_message], "images": sample["images"]})
+            questions.append(_extract_text_from_message(user_message))
+            references.append(_extract_text_from_message(assistant_message))
+       
+    else :
+        split_name = _resolve_split(dataset_id, eval_split)
+        raw_dataset = load_dataset(dataset_id, subset_name, split=split_name, cache_dir=cache_dir)
+        col_names = get_column_names(dataset_id)
+        for sample in raw_dataset:
+            processed = preprocess_fn(sample, col_names=col_names, rgb_convert=True)
+            user_message = processed["messages"][0]
+            assistant_message = processed["messages"][1]
+            model_inputs.append({"messages": [user_message], "images": processed["images"]})
+            questions.append(_extract_text_from_message(user_message))
+            references.append(_extract_text_from_message(assistant_message))
 
     bf16, fp16 = _resolve_precision_flags(bf16, fp16)
     dtype = _resolve_dtype(bf16, fp16)
@@ -239,6 +250,13 @@ def evaluate(
     base_model = AutoModelForImageTextToText.from_pretrained(**model_kwargs)
     model = PeftModel.from_pretrained(base_model, adapter_path) if adapter_path else base_model
     _configure_decoder_only_padding(processor, model)
+    if hasattr(model, "fuse_lora"):
+        try:
+            model.fuse_lora()
+            model.unload_lora_weights()
+            model.compile()
+        except Exception as e:
+            print(f"Warning: Failed to fuse/unload/compile LoRA weights: {e}")
     model.eval()
     model.to(torch_device)
 
@@ -255,6 +273,7 @@ def evaluate(
     predictions: List[str] = []
     batch_size = max(1, int(eval_batch_size))
     batch_starts = range(0, len(model_inputs), batch_size)
+    print("input num samples:", len(model_inputs))
     with torch.inference_mode():
         for start in tqdm(
             batch_starts,
@@ -273,6 +292,8 @@ def evaluate(
             prompt_input_ids = batch_inputs.get("input_ids")
             generated_ids = model.generate(**batch_inputs, **generation_kwargs)
             predictions.extend(_decode_predictions(processor, generated_ids, prompt_input_ids))
+            if start % (20 * batch_size) == 0:
+                print(f"cuda max memory allocated: {torch.cuda.max_memory_allocated() / 1024**3:.2f} GB")
 
     metrics = _compute_local_metrics(predictions, references)
 
@@ -328,13 +349,7 @@ def evaluate(
         "timestamp": train_timestamp or now_timestamp(),
         "base_model": base_model_name,
         "dataset_name": dataset_id,
-        "adapter_path": adapter_path or "",
-        "run_name": run_name,
-        "eval_split": split_name,
-        "backend": "hf_model_generate",
         "seed": run_fields.get("seed", seed),
-        "eval_seed": seed,
-        "num_samples": len(predictions),
     }
 
     init_lora_weights = adapter_cfg.get("init_lora_weights") if isinstance(adapter_cfg, dict) else None

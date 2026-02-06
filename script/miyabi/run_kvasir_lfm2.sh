@@ -1,6 +1,5 @@
 #!/bin/bash
-
-DATASET="HuggingFaceM4/ChartQA"
+DATASET="Kvasir-VQA-x1"
 MODEL_NAME="LiquidAI/LFM2.5-VL-1.6B"
 
 export CUDA_VISIBLE_DEVICES="0"
@@ -14,12 +13,12 @@ python -m src.cli train \
     --model_name "${MODEL_NAME}" \
     --seed 11 \
     --global_batch_size 16 \
-    --per_device_batch_size 8 \
-    --num_train_epochs 0.1 \
+    --per_device_batch_size 2 \
+    --num_train_epochs 4 \
     --learning_rate 4e-4 \
     --weight_decay 0.01 \
     --warmup_ratio 0.03 \
-    --target_modules "q_proj,k_proj,v_proj,out_proj,w1,w2,w3,lm_head" \
+    --target_modules "q_proj,k_proj,v_proj,out_proj,w1,w2,w3" \
     --lora_r 16 \
     --lora_alpha 1 \
     --lora_dropout 0.01 \
@@ -29,11 +28,5 @@ python -m src.cli train \
     --init_num_samples 128 \
     --init_batch_size 1 \
     --eval_steps 100 \
-    --eval_batch_size 16 \
+    --eval_batch_size 2 \
     --logging_steps 50 \
-    --use_cleaned_svd_ref_trainer true \
-    --repeat_n 1 \
-    --repeat_warmup_ratio 0.06 \
-    --repeat_decay_ratio 0.06 \
-    --repeat_end_lr_rate 0.94 \
-    --final_warmup_ratio 0.06 \

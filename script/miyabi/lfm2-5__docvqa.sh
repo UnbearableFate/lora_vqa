@@ -37,10 +37,9 @@ HF_HOME="/work/xg24i002/x10041/hf_home"
 HF_DATASETS_CACHE="/work/xg24i002/x10041/data"
 export HF_HOME HF_DATASETS_CACHE
 
-DATASET="HuggingFaceM4/ChartQA"
+DATASET="HuggingFaceM4/DocumentVQA"
 MODEL_NAME="LiquidAI/LFM2.5-VL-1.6B"
 target_modules="q_proj,k_proj,v_proj,out_proj,w1,w2,w3"
-
 
 timestamp=$(date +%Y%m%d-%H%M%S)
 mpirun --mca mpi_abort_print_stack 1 \
@@ -81,12 +80,19 @@ mpirun --mca mpi_abort_print_stack 1 \
                     --lora_dropout 0.0 \
                     --lora_bias none \
                     --peft_variant lora \
-                    --init_lora_weights true \
+                    --init_lora_weights True \
                     --init_num_samples 128 \
                     --init_batch_size 1 \
                     --eval_steps 100 \
                     --eval_batch_size 4 \
                     --logging_steps 50 \
-                    --use_wandb true \
-                    --wandb_online true \
+                    --use_wandb True \
+                    --wandb_online True \
+                    --use_cleaned_svd_ref_trainer True \
+                    --repeat_n 1 \
+                    --repeat_warmup_ratio 0.03 \
+                    --repeat_decay_ratio 0.03 \
+                    --repeat_end_lr_rate 0.97 \
+                    --final_warmup_ratio 0.03 \
+                    --rgb_convert False \
                     '

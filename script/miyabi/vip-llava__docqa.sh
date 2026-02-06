@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -q regular-g
 #PBS -W group_list=xg24i002
-#PBS -l select=16:mpiprocs=1
+#PBS -l select=8:mpiprocs=1
 #PBS -l walltime=02:00:00
 #PBS -j oe
 #PBS -m abe
@@ -37,7 +37,7 @@ HF_HOME="/work/xg24i002/x10041/hf_home"
 HF_DATASETS_CACHE="/work/xg24i002/x10041/data"
 export HF_HOME HF_DATASETS_CACHE
 
-DATASET="HuggingFaceM4/ChartQA"
+DATASET="HuggingFaceM4/DocumentVQA"
 MODEL_NAME="llava-hf/vip-llava-7b-hf"
 target_modules="q_proj,k_proj,v_proj,out_proj,gate_proj,up_proj,down_proj,fc,linear,lm_head"
 
@@ -84,8 +84,9 @@ mpirun --mca mpi_abort_print_stack 1 \
                     --init_num_samples 128 \
                     --init_batch_size 1 \
                     --eval_steps 100 \
-                    --eval_batch_size 4 \
+                    --eval_batch_size 8 \
                     --logging_steps 50 \
                     --use_wandb true \
                     --wandb_online true \
+                    --rgb_convert False \
                     '

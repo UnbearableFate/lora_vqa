@@ -37,7 +37,7 @@ HF_HOME="/work/xg24i002/x10041/hf_home"
 HF_DATASETS_CACHE="/work/xg24i002/x10041/data"
 export HF_HOME HF_DATASETS_CACHE
 
-DATASET="HuggingFaceM4/ChartQA"
+DATASET="Kvasir-VQA-x1"
 MODEL_NAME="llava-hf/vip-llava-7b-hf"
 target_modules="q_proj,k_proj,v_proj,out_proj,gate_proj,up_proj,down_proj,fc,linear,lm_head"
 
@@ -69,7 +69,7 @@ mpirun --mca mpi_abort_print_stack 1 \
                     --seed 11 \
                     --global_batch_size 32 \
                     --per_device_batch_size 4 \
-                    --num_train_epochs 8 \
+                    --num_train_epochs 2 \
                     --learning_rate 4e-4 \
                     --weight_decay 0.0 \
                     --warmup_ratio 0.03 \
@@ -85,7 +85,7 @@ mpirun --mca mpi_abort_print_stack 1 \
                     --init_batch_size 1 \
                     --eval_steps 100 \
                     --eval_batch_size 4 \
-                    --logging_steps 50 \
+                    --logging_steps 20 \
                     --use_wandb true \
                     --wandb_online true \
                     '
