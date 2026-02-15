@@ -2,7 +2,7 @@
 #PBS -q regular-g
 #PBS -W group_list=xg24i002
 #PBS -l select=1:mpiprocs=1
-#PBS -l walltime=02:30:00
+#PBS -l walltime=02:00:00
 #PBS -j oe
 #PBS -m abe
 

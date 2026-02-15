@@ -1,3 +1,4 @@
+import gc
 import torch
 from torch import nn, Tensor
 import torch.distributed as dist
@@ -203,13 +204,23 @@ class DistributedSvdRefactorTrainer(SFTTrainer):
 
             if compute_here:
                 # 始终对 B @ A 做 SVD，作为正交基
-                base = B @ A
-                U, S, Vh = torch.svd_lowrank(base.float(), q=lora_r)
-                variance_of_layers[f"{module_name}.{name}"] = float((S ** 2).sum().item())
-                B_new = U.to(B.dtype)
-                A_new = Vh.t().to(A.dtype)
-                B.copy_(B_new)
-                A.copy_(A_new)
+                try:
+                    base = B @ A
+                    U, S, Vh = torch.svd_lowrank(base.float(), q=lora_r)
+                    variance_of_layers[f"{module_name}.{name}"] = float((S ** 2).sum().item())
+                    B_new = U.to(B.dtype)
+                    A_new = Vh.t().to(A.dtype)
+                    B.copy_(B_new)
+                    A.copy_(A_new)
+                except Exception as e:
+                    print(f"Error in SVD for {module_name}.{name} on rank {rank}: {e}, trying CPU fallback.")
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                    base = (B @ A).to("cpu").float()
+                    U, S, Vh = torch.svd_lowrank(base, q=lora_r)
+                    variance_of_layers[f"{module_name}.{name}"] = float((S ** 2).sum().item())
+                    B.copy_(U.to(device=B.device, dtype=B.dtype))
+                    A.copy_(Vh.t().to(device=A.device, dtype=A.dtype))
 
             if is_dist:
                 broadcast_works.append(

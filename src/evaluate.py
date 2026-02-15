@@ -14,13 +14,12 @@ from .common import (
     append_row_to_csv,
     json_safe,
     now_timestamp,
-    parse_run_name_fields,
+    parse_adapter_path_fields,
     read_adapter_config,
     resolve_eval_csv_path,
 )
-from .data_process import get_column_names, get_val_split_name, preprocess_fn
+from .data_process import get_column_names, get_val_split_name, preprocess_fn, get_dataset_official_names
 from .metrics import exact_match, token_f1, vqa_soft_accuracy
-
 
 def _resolve_precision_flags(bf16: bool, fp16: bool) -> tuple[bool, bool]:
     if bf16 and fp16:
@@ -160,22 +159,12 @@ def _compute_local_metrics(predictions: List[str], references: List[str]) -> Dic
 
 def evaluate(
     *,
-    dataset_name: Optional[str] = None,
-    model_name: Optional[str] = None,
     adapter_path: Optional[str] = None,
     subset_name: Optional[str] = None,
-    eval_split: str = "validation",
-    image_column: Optional[str] = None,
-    question_column: Optional[str] = None,
-    answer_column: Optional[str] = None,
-    trust_remote_code: bool = True,
-    image_placeholder: Optional[str] = None,
-    max_length: int = 512,
     max_new_tokens: int = 64,
     temperature: float = 0.0,
     top_p: float = 1.0,
     eval_batch_size: int = 2,
-    seed: int = 42,
     cache_dir: Optional[str] = None,
     csv_path_dir: Optional[str] = "experiments",
     device: Optional[str] = "cuda:0",
@@ -183,34 +172,31 @@ def evaluate(
     fp16: bool = False,
     use_fast: Optional[bool] = None,
     attn_implementation: Optional[str] = None,
-    num_workers: int = 0,
     examples_num_batches: int = 3,
     examples_json_path: Optional[str] = None,
 ):
-    del image_column, question_column, answer_column, image_placeholder, max_length, num_workers
-    if not dataset_name:
-        raise ValueError("dataset_name is required.")
-    if not model_name:
-        raise ValueError("model_name is required.")
-
-    set_seed(seed)
-    dataset_id = dataset_name
+    trust_remote_code = True
     adapter_cfg = read_adapter_config(adapter_path)
-
+    exp_info = parse_adapter_path_fields(adapter_path)
+    dataset_id = exp_info["dataset_name"]
+    seed = exp_info["seed"]
+    eval_split = "test"
+    model_name = adapter_cfg.get("base_model_name_or_path")
+    set_seed(seed)
+   
     model_inputs: List[Dict[str, Any]] = []
     references: List[str] = []
     questions: List[str] = []
     split_name = "test"
-    if "kvasir-vqa" in dataset_name.lower():
+    if "kvasir-vqa" in dataset_id.lower():
         split_name = "test"
-        test_dataset = load_dataset("json", data_files={"test": "data/Kvasir-VQA-x1/Kvasir-VQA-x1-test.jsonl"}, split="test")
+        test_dataset = load_dataset("json", data_files={"test": "data/Kvasir-VQA-x1/Kvasir-VQA-x1-test.jsonl"}, split="test").select(range(512))
         for sample in test_dataset:
             user_message = sample["messages"][0]
             assistant_message = sample["messages"][1]
             model_inputs.append({"messages": [user_message], "images": sample["images"]})
             questions.append(_extract_text_from_message(user_message))
             references.append(_extract_text_from_message(assistant_message))
-       
     else :
         split_name = _resolve_split(dataset_id, eval_split)
         raw_dataset = load_dataset(dataset_id, subset_name, split=split_name, cache_dir=cache_dir)
@@ -244,11 +230,24 @@ def evaluate(
     if cache_dir:
         model_kwargs["cache_dir"] = cache_dir
     if dtype is not None:
-        model_kwargs["torch_dtype"] = dtype
+        model_kwargs["dtype"] = torch.bfloat16
     if attn_implementation:
         model_kwargs["attn_implementation"] = attn_implementation
     base_model = AutoModelForImageTextToText.from_pretrained(**model_kwargs)
-    model = PeftModel.from_pretrained(base_model, adapter_path) if adapter_path else base_model
+    fake_lora_config = None
+    if adapter_cfg.get("init_lora_weights") == "corda":
+        from peft import LoraConfig
+        fake_lora_config = LoraConfig(
+            r=adapter_cfg.get("r"),
+            init_lora_weights=True,
+            lora_alpha=adapter_cfg.get("lora_alpha", 16),
+            target_modules=adapter_cfg.get("target_modules"),
+            exclude_modules=adapter_cfg.get("exclude_modules"),
+            lora_dropout=adapter_cfg.get("lora_dropout", 0.0),
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+    model = PeftModel.from_pretrained(base_model, adapter_path, config=fake_lora_config)
     _configure_decoder_only_padding(processor, model)
     if hasattr(model, "fuse_lora"):
         try:
@@ -302,9 +301,7 @@ def evaluate(
         if isinstance(adapter_cfg, dict)
         else model_name.split("/")[-1]
     )
-    run_name = os.path.basename(os.path.normpath(adapter_path)) if adapter_path else ""
-    run_fields = parse_run_name_fields(run_name) if run_name else {}
-    train_timestamp = str(run_fields.get("timestamp") or "")
+    train_timestamp = str(exp_info.get("timestamp") or "")
 
     resolved_csv_path = resolve_eval_csv_path(
         dataset_id=dataset_id,
@@ -319,7 +316,7 @@ def evaluate(
         resolved_examples_path = examples_json_path
         if not resolved_examples_path:
             base_path, _ = os.path.splitext(resolved_csv_path)
-            resolved_examples_path = f"{base_path}_examples.json"
+            resolved_examples_path = f"{base_path}_{adapter_path.split('/')[-1]}_examples.json"
         examples_dir = os.path.dirname(resolved_examples_path)
         if examples_dir:
             os.makedirs(examples_dir, exist_ok=True)
@@ -349,13 +346,14 @@ def evaluate(
         "timestamp": train_timestamp or now_timestamp(),
         "base_model": base_model_name,
         "dataset_name": dataset_id,
-        "seed": run_fields.get("seed", seed),
+        "seed": exp_info.get("seed", seed),
     }
 
     init_lora_weights = adapter_cfg.get("init_lora_weights") if isinstance(adapter_cfg, dict) else None
     if isinstance(init_lora_weights, str) and init_lora_weights.strip().lower() == "true":
         init_lora_weights = "kaiming"
-    row["init_lora_weights"] = init_lora_weights if init_lora_weights is not None else ""
+    row["init_lora_weights"] = init_lora_weights if init_lora_weights is not None else "none"
+    row['extra'] = exp_info.get('extra', 'none')
 
     for k, v in metrics.items():
         row[f"metric_{k}"] = v

@@ -122,7 +122,10 @@ def train(
     first_warmup_start_lr_rate: float = 0.001,
     last_epoch: int = -1,
     timestamp: Optional[str] = None,
-    skip_eval: bool = False,
+    skip_eval: bool = True,
+    metric_for_best_model: str = "eval_loss", 
+    greater_is_better: bool = False,
+    load_best_model_at_end: bool = True,
 ):
     accelerator = Accelerator()
     set_seed(seed)
@@ -298,6 +301,9 @@ def train(
 
     if hasattr(model, "print_trainable_parameters"):
         model.print_trainable_parameters()
+    if accelerator.is_main_process:
+        with open(f"/work/xg24i002/x10041/lora_vqa/model_strcut/{model_name.replace('/', '_')}_lora_hyperparameters.txt", "w") as f:
+            f.write(str(model))
 
     world_size = accelerator.num_processes
     gradient_accumulation_steps = max(1, global_batch_size // max(1, per_device_batch_size * world_size))
@@ -334,7 +340,9 @@ def train(
         fp16=fp16,
         gradient_checkpointing=gradient_checkpointing,
         eval_strategy="steps" if not skip_eval else "no",
-        save_strategy="steps",
+        save_strategy="steps" if not skip_eval else "no",
+        load_best_model_at_end=load_best_model_at_end if not skip_eval else False,
+        metric_for_best_model=metric_for_best_model if not skip_eval else None,
         save_total_limit=2,
         report_to="wandb" if use_wandb else "none",
         remove_unused_columns=False,

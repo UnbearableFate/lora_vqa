@@ -5,6 +5,12 @@ from PIL import Image
 
 from typing import Optional
 
+dataset_offical_names = [
+    "SimulaMet/Kvasir-VQA-x1",
+    "HuggingFaceM4/ChartQA",
+    "HuggingFaceM4/DocumentVQA",
+    "hiyouga/geometry3k",
+]
 COL_NAME_MAP = {
     "geometry3k" : {
         "images": "images",
@@ -41,6 +47,12 @@ SPLIT_NAME_MAP = {
         "test": "test",
     },
 }
+
+def get_dataset_official_names(dataset_name: str) -> list:
+    for name in dataset_offical_names:
+        if dataset_name.lower() in name.lower():
+            return name
+    return None
 
 def get_column_names(dataset_name: str) -> str:
     key = dataset_name.split("/")[-1].lower()
@@ -113,10 +125,6 @@ def preprocess_fn(data_point, col_names , rgb_convert: bool = True):
     }
 
 def load_and_preprocess_dataset(dataset_id: str, subset_name: Optional[str] = None, splits: list = ["train", "val"], num_proc: int = 16 ,rgb_convert: bool = True):
-    if "documentvqa" in dataset_id.lower():
-        rgb_convert = False
-    elif "chartqa" in dataset_id.lower():
-        rgb_convert = True
     dataset = load_dataset(dataset_id, subset_name)
     train_dataset, val_dataset, test_dataset = None, None, None
     col_names = get_column_names(dataset_id)
@@ -141,6 +149,8 @@ def load_and_preprocess_dataset(dataset_id: str, subset_name: Optional[str] = No
         val_columns = list(dataset[val_split_name].column_names)
         if "images" in val_columns:
             val_columns.remove("images")
+        if "documentvqa" in dataset_id.lower():
+            dataset[val_split_name] = dataset[val_split_name].select(range(5120))
         val_dataset = dataset[val_split_name].map(
             preprocess_fn,
             fn_kwargs={"col_names": col_names, "rgb_convert": rgb_convert},
@@ -215,5 +225,5 @@ def get_val_split_name(dataset_name: str) -> str:
 if __name__ == "__main__":
     # For quick testing
     dataset_id = "HuggingFaceM4/DocumentVQA" #cache/HuggingFaceM4_DocumentVQA
-    train_ds, val_ds, test_ds = load_and_preprocess_dataset(dataset_id, splits=["train", "val", "test"], num_proc=8, rgb_convert=False)
+    train_ds, val_ds, test_ds = load_and_preprocess_dataset(dataset_id, splits=["val", "test"], num_proc=None, rgb_convert=True)
     print(train_ds[0])

@@ -8,6 +8,8 @@ import os
 import re
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Union
 
+from .data_process import get_dataset_official_names
+
 
 def slugify(value: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "-", value.strip())
@@ -265,22 +267,30 @@ _RUN_SEED_RE = re.compile(r"(?:^|_)s(?P<seed>\d+)(?:_|$)")
 _RUN_TS_RE = re.compile(r"(?P<ts>\d{8}[-_]\d{6})$")
 
 
-def parse_run_name_fields(run_name: str) -> Dict[str, object]:
-    """
-    Best-effort parse for lora_image-style run_name suffixes like:
-      ..._s42_20260127-123456
-    """
-    fields: Dict[str, object] = {}
-    match_seed = _RUN_SEED_RE.search(run_name)
-    if match_seed:
+def parse_adapter_path_fields(adapter_path: str) -> Dict[str, object]:
+    path_infos = adapter_path.split("/")
+    if "lora" in path_infos[-1]:
+        adapter_path = path_infos[-1]
+    elif "lora" in  path_infos[-2]:
+        adapter_path = path_infos[-2]
+    else:
+        raise ValueError(f"Cannot parse adapter path: {adapter_path}")
+    info_list = adapter_path.strip().split("_")
+    res = {}
+    if get_dataset_official_names(info_list[1]) is not None:
+        res["dataset_name"] = get_dataset_official_names(info_list[1])
+    else:
+        raise ValueError(f"Cannot parse dataset name from adapter path: {adapter_path}")
+    if info_list[-2].startswith("s"):
         try:
-            fields["seed"] = int(match_seed.group("seed"))
-        except Exception:
-            pass
-    match_ts = _RUN_TS_RE.search(run_name)
-    if match_ts:
-        fields["timestamp"] = match_ts.group("ts").replace("_", "-")
-    return fields
+            res["seed"] = int(info_list[-2][1:])
+        except ValueError:
+            raise ValueError(f"Cannot parse seed from adapter path: {adapter_path}")
+    if info_list[5].startswith("sr"):
+        res["extra"] = info_list[5]
+    if info_list[-1].startswith("2026"):
+        res["timestamp"] = info_list[-1]
+    return res
 
 
 def now_timestamp() -> str:

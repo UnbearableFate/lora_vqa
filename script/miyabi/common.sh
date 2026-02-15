@@ -4,7 +4,7 @@ module load cuda/12.8
 
 set -euo pipefail
 
-cd "${PBS_O_WORKDIR:-$(pwd)}"
+cd "/work/xg24i002/x10041/lora_vqa"
 echo "Current working directory: $(pwd)"
 
 module load cuda/12.8

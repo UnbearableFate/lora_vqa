@@ -1,0 +1,262 @@
+PeftModelForCausalLM(
+  (base_model): LoraModel(
+    (model): Mistral3ForConditionalGeneration(
+      (model): Mistral3Model(
+        (vision_tower): PixtralVisionModel(
+          (patch_conv): Conv2d(3, 1024, kernel_size=(14, 14), stride=(14, 14), bias=False)
+          (ln_pre): PixtralRMSNorm((1024,), eps=1e-05)
+          (transformer): PixtralTransformer(
+            (layers): ModuleList(
+              (0-23): 24 x PixtralAttentionLayer(
+                (attention_norm): PixtralRMSNorm((1024,), eps=1e-05)
+                (feed_forward): PixtralMLP(
+                  (gate_proj): lora.Linear(
+                    (base_layer): Linear(in_features=1024, out_features=4096, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (default): Identity()
+                    )
+                    (lora_A): ModuleDict(
+                      (default): Linear(in_features=1024, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (default): Linear(in_features=16, out_features=4096, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (up_proj): lora.Linear(
+                    (base_layer): Linear(in_features=1024, out_features=4096, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (default): Identity()
+                    )
+                    (lora_A): ModuleDict(
+                      (default): Linear(in_features=1024, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (default): Linear(in_features=16, out_features=4096, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (down_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (default): Identity()
+                    )
+                    (lora_A): ModuleDict(
+                      (default): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (default): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (act_fn): SiLUActivation()
+                )
+                (attention): PixtralAttention(
+                  (k_proj): lora.Linear(
+                    (base_layer): Linear(in_features=1024, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (default): Identity()
+                    )
+                    (lora_A): ModuleDict(
+                      (default): Linear(in_features=1024, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (default): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (v_proj): lora.Linear(
+                    (base_layer): Linear(in_features=1024, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (default): Identity()
+                    )
+                    (lora_A): ModuleDict(
+                      (default): Linear(in_features=1024, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (default): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (q_proj): lora.Linear(
+                    (base_layer): Linear(in_features=1024, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (default): Identity()
+                    )
+                    (lora_A): ModuleDict(
+                      (default): Linear(in_features=1024, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (default): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (o_proj): lora.Linear(
+                    (base_layer): Linear(in_features=1024, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (default): Identity()
+                    )
+                    (lora_A): ModuleDict(
+                      (default): Linear(in_features=1024, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (default): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                )
+                (ffn_norm): PixtralRMSNorm((1024,), eps=1e-05)
+              )
+            )
+          )
+          (patch_positional_embedding): PixtralRotaryEmbedding()
+        )
+        (multi_modal_projector): Mistral3MultiModalProjector(
+          (norm): Mistral3RMSNorm((1024,), eps=1e-05)
+          (patch_merger): Mistral3PatchMerger(
+            (merging_layer): Linear(in_features=4096, out_features=1024, bias=False)
+          )
+          (linear_1): Linear(in_features=1024, out_features=3072, bias=False)
+          (act): GELUActivation()
+          (linear_2): Linear(in_features=3072, out_features=3072, bias=False)
+        )
+        (language_model): Ministral3Model(
+          (embed_tokens): Embedding(131072, 3072, padding_idx=11)
+          (layers): ModuleList(
+            (0-25): 26 x Ministral3DecoderLayer(
+              (self_attn): Ministral3Attention(
+                (q_proj): lora.Linear(
+                  (base_layer): FP8Linear(in_features=3072, out_features=4096, bias=False)
+                  (lora_dropout): ModuleDict(
+                    (default): Identity()
+                  )
+                  (lora_A): ModuleDict(
+                    (default): Linear(in_features=3072, out_features=16, bias=False)
+                  )
+                  (lora_B): ModuleDict(
+                    (default): Linear(in_features=16, out_features=4096, bias=False)
+                  )
+                  (lora_embedding_A): ParameterDict()
+                  (lora_embedding_B): ParameterDict()
+                  (lora_magnitude_vector): ModuleDict()
+                )
+                (k_proj): lora.Linear(
+                  (base_layer): FP8Linear(in_features=3072, out_features=1024, bias=False)
+                  (lora_dropout): ModuleDict(
+                    (default): Identity()
+                  )
+                  (lora_A): ModuleDict(
+                    (default): Linear(in_features=3072, out_features=16, bias=False)
+                  )
+                  (lora_B): ModuleDict(
+                    (default): Linear(in_features=16, out_features=1024, bias=False)
+                  )
+                  (lora_embedding_A): ParameterDict()
+                  (lora_embedding_B): ParameterDict()
+                  (lora_magnitude_vector): ModuleDict()
+                )
+                (v_proj): lora.Linear(
+                  (base_layer): FP8Linear(in_features=3072, out_features=1024, bias=False)
+                  (lora_dropout): ModuleDict(
+                    (default): Identity()
+                  )
+                  (lora_A): ModuleDict(
+                    (default): Linear(in_features=3072, out_features=16, bias=False)
+                  )
+                  (lora_B): ModuleDict(
+                    (default): Linear(in_features=16, out_features=1024, bias=False)
+                  )
+                  (lora_embedding_A): ParameterDict()
+                  (lora_embedding_B): ParameterDict()
+                  (lora_magnitude_vector): ModuleDict()
+                )
+                (o_proj): lora.Linear(
+                  (base_layer): FP8Linear(in_features=4096, out_features=3072, bias=False)
+                  (lora_dropout): ModuleDict(
+                    (default): Identity()
+                  )
+                  (lora_A): ModuleDict(
+                    (default): Linear(in_features=4096, out_features=16, bias=False)
+                  )
+                  (lora_B): ModuleDict(
+                    (default): Linear(in_features=16, out_features=3072, bias=False)
+                  )
+                  (lora_embedding_A): ParameterDict()
+                  (lora_embedding_B): ParameterDict()
+                  (lora_magnitude_vector): ModuleDict()
+                )
+              )
+              (mlp): Ministral3MLP(
+                (gate_proj): lora.Linear(
+                  (base_layer): FP8Linear(in_features=3072, out_features=9216, bias=False)
+                  (lora_dropout): ModuleDict(
+                    (default): Identity()
+                  )
+                  (lora_A): ModuleDict(
+                    (default): Linear(in_features=3072, out_features=16, bias=False)
+                  )
+                  (lora_B): ModuleDict(
+                    (default): Linear(in_features=16, out_features=9216, bias=False)
+                  )
+                  (lora_embedding_A): ParameterDict()
+                  (lora_embedding_B): ParameterDict()
+                  (lora_magnitude_vector): ModuleDict()
+                )
+                (up_proj): lora.Linear(
+                  (base_layer): FP8Linear(in_features=3072, out_features=9216, bias=False)
+                  (lora_dropout): ModuleDict(
+                    (default): Identity()
+                  )
+                  (lora_A): ModuleDict(
+                    (default): Linear(in_features=3072, out_features=16, bias=False)
+                  )
+                  (lora_B): ModuleDict(
+                    (default): Linear(in_features=16, out_features=9216, bias=False)
+                  )
+                  (lora_embedding_A): ParameterDict()
+                  (lora_embedding_B): ParameterDict()
+                  (lora_magnitude_vector): ModuleDict()
+                )
+                (down_proj): lora.Linear(
+                  (base_layer): FP8Linear(in_features=9216, out_features=3072, bias=False)
+                  (lora_dropout): ModuleDict(
+                    (default): Identity()
+                  )
+                  (lora_A): ModuleDict(
+                    (default): Linear(in_features=9216, out_features=16, bias=False)
+                  )
+                  (lora_B): ModuleDict(
+                    (default): Linear(in_features=16, out_features=3072, bias=False)
+                  )
+                  (lora_embedding_A): ParameterDict()
+                  (lora_embedding_B): ParameterDict()
+                  (lora_magnitude_vector): ModuleDict()
+                )
+                (act_fn): SiLUActivation()
+              )
+              (input_layernorm): Ministral3RMSNorm((3072,), eps=1e-05)
+              (post_attention_layernorm): Ministral3RMSNorm((3072,), eps=1e-05)
+            )
+          )
+          (norm): Ministral3RMSNorm((3072,), eps=1e-05)
+          (rotary_emb): Ministral3RotaryEmbedding()
+        )
+      )
+      (lm_head): Linear(in_features=3072, out_features=131072, bias=False)
+    )
+  )
+)
