@@ -31,7 +31,7 @@ else
     export OMPI_MCA_mca_base_env_list="${ENV_LIST}"
 fi
 
-PYTHON_PATH="/work/xg24i002/x10041/my_peft/torch291/bin/python"
+PYTHON_PATH="/work/xg24i002/x10041/peft/.venv/bin/python"
 
 HF_HOME="/work/xg24i002/x10041/hf_home"
 HF_DATASETS_CACHE="/work/xg24i002/x10041/data"

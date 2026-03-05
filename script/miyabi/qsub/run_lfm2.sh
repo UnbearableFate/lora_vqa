@@ -31,7 +31,8 @@ else
     export OMPI_MCA_mca_base_env_list="${ENV_LIST}"
 fi
 
-PYTHON_PATH="/work/xg24i002/x10041/my_peft/torch291/bin/python"
+#PYTHON_PATH="/work/xg24i002/x10041/peft/.venv/bin/python"
+PYTHON_PATH="/work/xg24i002/x10041/peft/.venv/bin/python"
 
 HF_HOME="/work/xg24i002/x10041/hf_home"
 HF_DATASETS_CACHE="/work/xg24i002/x10041/data"
@@ -40,8 +41,8 @@ export HF_HOME HF_DATASETS_CACHE
 DATASET=${DATASET:-"HuggingFaceM4/ChartQA"}
 SEED=${SEED:-23}
 use_cleaned_svd_ref_trainer=${use_cleaned_svd_ref_trainer:-False}
-init_lora_weights=${init_lora_weights:-lora_ga}
-output_dir=${output_dir:-"output_lfm2_20260213-1511"}
+init_lora_weights=${init_lora_weights:-pissa}
+output_dir=${output_dir:-"output_lfm2_test"}
 
 MODEL_NAME="LiquidAI/LFM2.5-VL-1.6B"
 target_modules="q_proj,k_proj,v_proj,out_proj,in_proj"
@@ -75,9 +76,9 @@ mpirun --mca mpi_abort_print_stack 1 \
                     --seed '"${SEED}"' \
                     --global_batch_size 32 \
                     --per_device_batch_size 4 \
-                    --num_train_epochs 0.05 \
+                    --num_train_epochs 10 \
                     --learning_rate 4e-4 \
-                    --weight_decay 0.01 \
+                    --weight_decay 0.0 \
                     --warmup_ratio 0.03 \
                     --target_modules '"${target_modules}"' \
                     --lora_r 16 \
@@ -92,12 +93,16 @@ mpirun --mca mpi_abort_print_stack 1 \
                     --eval_batch_size 4 \
                     --logging_steps 50 \
                     --use_cleaned_svd_ref_trainer '"${use_cleaned_svd_ref_trainer}"' \
-                    --repeat_n 3 \
+                    --repeat_n 2 \
+                    --adjust_lora_alpha_at [0] \
+                    --max_alpha_ratio 4.0 \
+                    --min_alpha_ratio 0.99 \
                     --repeat_warmup_ratio 0.03 \
                     --repeat_decay_ratio 0.03 \
                     --repeat_end_lr_rate 0.97 \
                     --final_warmup_ratio 0.03 \
-                    --skip_eval True \
+                    --load_best_model_at_end True \
+                    --skip_eval False \
                     '
 #--use_wandb True \
 #--wandb_online True \

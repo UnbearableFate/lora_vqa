@@ -1,0 +1,14 @@
+base_model,dataset_name,init_lora_weights,extra,r,lora_alpha,seed_count,row_count,metric_exact_match_mean,metric_exact_match_std
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,orthogonal,sr#3rp#at0#min0.8#max1.5,16,1,3,3,0.61320,0.00341
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,gaussian,sr#3rp#at0#min0.8#max1.5,16,1,2,2,0.61260,0.00420
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,kaiming,sr#3rp#at0#min0.8#max1.5,16,1,3,3,0.60267,0.00776
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,orthogonal,sr#1rp,16,1,1,1,0.59960,0.00000
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,olora,sr#3rp#at0#min0.8#max1.5,16,1,3,3,0.59947,0.00408
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,gaussian,sr#1rp,16,1,1,1,0.59760,0.00000
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,kaiming,sr#1rp,16,1,1,3,0.59693,0.01000
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,gaussian,none,16,1,3,3,0.57853,0.00340
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,orthogonal,none,16,1,3,3,0.57600,0.00247
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,kaiming,none,16,1,3,5,0.56864,0.00509
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,eva,none,16,1,3,3,0.56280,0.00877
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,olora,none,16,1,3,3,0.56013,0.00168
+llava-v1.6-mistral-7b-hf,HuggingFaceM4/ChartQA,pissa,none,16,1,3,3,0.08667,0.00019

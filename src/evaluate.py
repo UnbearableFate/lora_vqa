@@ -349,8 +349,8 @@ def evaluate(
         "seed": exp_info.get("seed", seed),
     }
 
-    init_lora_weights = adapter_cfg.get("init_lora_weights") if isinstance(adapter_cfg, dict) else None
-    if isinstance(init_lora_weights, str) and init_lora_weights.strip().lower() == "true":
+    init_lora_weights = exp_info.get("init_lora_weights")
+    if str(init_lora_weights).strip().lower() == "true":
         init_lora_weights = "kaiming"
     row["init_lora_weights"] = init_lora_weights if init_lora_weights is not None else "none"
     row['extra'] = exp_info.get('extra', 'none')

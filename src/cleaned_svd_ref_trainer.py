@@ -1,8 +1,10 @@
 import gc
+from peft import LoraConfig
 import torch
 from torch import nn, Tensor
 import torch.distributed as dist
 from trl import SFTTrainer, SFTConfig
+import os
 
 import math
 from torch.optim import AdamW
@@ -141,7 +143,7 @@ class DistributedSvdRefactorTrainer(SFTTrainer):
         self,
         *args,
         adjust_lora_alpha_at: List[int] = [],
-        basic_alpha: float = 2.0,
+        basic_alpha: float = 1.0,
         min_alpha_ratio: float = 0.8,
         max_alpha_ratio: float = 1.6,
         **kwargs,
@@ -156,6 +158,8 @@ class DistributedSvdRefactorTrainer(SFTTrainer):
         self._refactor_times = 0
         self.alpha_log = {}
         self.basic_alpha = float(basic_alpha)
+        if hasattr(self.model, "peft_config") and self.model.peft_config is not None and isinstance(self.model.peft_config["default"], LoraConfig):
+            self.basic_alpha = float(self.model.peft_config["default"].lora_alpha)
 
     def _zero_adam_moments_for_param(self, param: Tensor) -> None:
         if not hasattr(self, "optimizer") or self.optimizer is None:
@@ -290,12 +294,13 @@ class DistributedSvdRefactorTrainer(SFTTrainer):
 
                 modules_dict = dict(model.named_modules())
                 for idx, (module_name, adapter_name) in enumerate(alpha_indices):
-                    sub_module = modules_dict[module_name]
-                    if f"{module_name}.{adapter_name}" not in self.alpha_log:
-                        self.alpha_log[f"{module_name}.{adapter_name}"] = [sub_module.lora_alpha[adapter_name]]
+                    sub_module = modules_dict[module_name]        
                     sub_module.lora_alpha[adapter_name] = float(alpha_tensor[idx].item())    
                     sub_module.set_scale(adapter_name, 1.0)  # 更新 scale
-                    self.alpha_log[f"{module_name}.{adapter_name}"].append(sub_module.lora_alpha[adapter_name])
+                    if f"{module_name}.{adapter_name}" not in self.alpha_log:
+                        self.alpha_log[f"{module_name}.{adapter_name}"] = [sub_module.lora_alpha[adapter_name]]
+                    else:
+                        self.alpha_log[f"{module_name}.{adapter_name}"].append(sub_module.lora_alpha[adapter_name])
 
         for module_name, name, B, A in iter_lora_factors_with_names(model):
             self._zero_adam_moments_for_param(B)
@@ -379,6 +384,9 @@ class DistributedSvdRefactorTrainer(SFTTrainer):
                     min_alpha_ratio = self.min_alpha_ratio,
                     max_alpha_ratio = self.max_alpha_ratio,
                     )
+                if self.accelerator.process_index == 0:
+                    print(f"Step {step}: Adjusted LoRA alphas based on variance ratios with min_alpha_ratio={self.min_alpha_ratio} and max_alpha_ratio={self.max_alpha_ratio}.")
+                    self.save_alpha_log(os.path.join(self.args.output_dir, f"alpha_log.json"))
             else:
                 self.distributed_low_rank_refactor(
                     adjust_lora_alpha = False,
@@ -394,7 +402,23 @@ class DistributedSvdRefactorTrainer(SFTTrainer):
         import json
         with open(filepath, "w") as f:
             json.dump(self.alpha_log, f, indent=4)
-
+    
+    # call this before save
+    @torch.no_grad()
+    def merge_lora_alpha(self):
+        if not self.alpha_log:
+            return
+        model = self.model
+        for module_name, sub_module in model.named_modules():
+            if hasattr(sub_module, "lora_A") and hasattr(sub_module, "lora_B") and hasattr(sub_module, "lora_alpha"):
+                for adapter_name in sub_module.lora_B.keys():
+                    if adapter_name not in sub_module.lora_alpha:
+                        continue
+                    if self.accelerator.process_index == 0:
+                        print(f"Merged alpha into B for adapter {module_name}.{adapter_name} with scale factor {sub_module.lora_alpha[adapter_name]/self.basic_alpha}. Reset alpha to basic_alpha {self.basic_alpha}.")
+                    sub_module.lora_B[adapter_name].weight.data.mul_(sub_module.lora_alpha[adapter_name]/self.basic_alpha)
+                    sub_module.lora_alpha[adapter_name] = self.basic_alpha
+                    
 def get_warmup_restart_then_final_decay_scheduler_ratio(
     optimizer,
     num_training_steps,
@@ -505,7 +529,7 @@ def get_cleaned_svd_ref_trainer(
     global_batch_size: int = 32,
     eval_dataset=None,
     adjust_lora_alpha_at: List[int] = [2],
-    basic_alpha: float = 2.0,
+    basic_alpha: float = 1.0,
     min_alpha_ratio: float = 0.8,
     max_alpha_ratio: float = 1.25,
     repeat_n: int = 3,
@@ -514,7 +538,7 @@ def get_cleaned_svd_ref_trainer(
     repeat_end_lr_rate: float = 0.97,
     final_warmup_ratio: float = 0.03,
     min_lr_rate: float = 0.001,
-    repeat_decay_type: str = "cosine",
+    repeat_decay_type: str = "linear",
     final_decay_type: str = "linear",
     warmup_start_lr_rate: float = 0.001,
     first_warmup_start_lr_rate: float = 0.001,

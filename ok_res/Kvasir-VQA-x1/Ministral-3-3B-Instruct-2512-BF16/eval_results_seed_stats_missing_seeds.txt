@@ -1,0 +1,11 @@
+input_csv: /work/xg24i002/x10041/lora_vqa/experiments/Kvasir-VQA-x1/Ministral-3-3B-Instruct-2512-BF16/eval_results.csv
+output_csv: /work/xg24i002/x10041/lora_vqa/experiments/Kvasir-VQA-x1/Ministral-3-3B-Instruct-2512-BF16/eval_results_seed_stats.csv
+value_column: metric_llm_score_0_10_avg
+all_seeds(3): 11, 23, 37
+
+base_model=Ministral-3-3B-Instruct-2512-BF16, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=gaussian, extra=sr#3rp#at0#min0.8#max1.5, r=16, lora_alpha=1
+missing_seeds(1): 23
+
+base_model=Ministral-3-3B-Instruct-2512-BF16, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=olora, extra=sr#3rp#at0#min0.8#max1.5, r=32, lora_alpha=2
+missing_seeds(1): 37
+

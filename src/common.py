@@ -73,6 +73,8 @@ def build_wandb_project_run_tags(
     use_cleaned_svd_ref_trainer: bool,
     repeat_n: int,
     adjust_lora_alpha_at: Optional[Sequence[int]],
+    min_alpha_ratio: Optional[float],
+    max_alpha_ratio: Optional[float],
     timestamp: str,
 ) -> Tuple[str, str, list[str]]:
     model_component = flatten_hf_id(model_name)
@@ -95,9 +97,16 @@ def build_wandb_project_run_tags(
         init_lora_weights_str,
     ]
     if use_cleaned_svd_ref_trainer:
-        key_parts.append(f"sr#{repeat_n}rp")
+        sr_key = f"sr#{repeat_n}rp"
+        if adjust_lora_alpha_at:
+            sr_key += f"#at{'&'.join(str(v) for v in adjust_lora_alpha_at)}"
+            if min_alpha_ratio is not None:
+                sr_key += f"#min{_format_float(min_alpha_ratio)}"
+            if max_alpha_ratio is not None:
+                sr_key += f"#max{_format_float(max_alpha_ratio)}"
+        key_parts.append(sr_key)
     key_parts.append(f"s{seed}")
-    key_parts.append(str(timestamp))
+    key_parts.append(str(timestamp).replace("_", "-"))
 
     run_name = truncate_with_hash("_".join(key_parts), max_len=128)
 
@@ -290,6 +299,7 @@ def parse_adapter_path_fields(adapter_path: str) -> Dict[str, object]:
         res["extra"] = info_list[5]
     if info_list[-1].startswith("2026"):
         res["timestamp"] = info_list[-1]
+    res["init_lora_weights"] = str(info_list[4]) 
     return res
 
 

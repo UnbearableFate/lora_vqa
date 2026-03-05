@@ -31,7 +31,7 @@ else
     export OMPI_MCA_mca_base_env_list="${ENV_LIST}"
 fi
 
-PYTHON_PATH="/work/xg24i002/x10041/my_peft/torch291/bin/python"
+PYTHON_PATH="/work/xg24i002/x10041/peft/.venv/bin/python"
 
 HF_HOME="/work/xg24i002/x10041/hf_home"
 HF_DATASETS_CACHE="/work/xg24i002/x10041/data"
@@ -40,7 +40,8 @@ export HF_HOME HF_DATASETS_CACHE
 DATASET=${DATASET:-"SimulaMet/Kvasir-VQA-x1"}
 SEED=${SEED:-11}
 use_cleaned_svd_ref_trainer=${use_cleaned_svd_ref_trainer:-True}
-init_lora_weights=${init_lora_weights:-gaussian}
+init_lora_weights=${init_lora_weights:-True}
+output_dir=${output_dir:-"output_more-more-alpha_$(date +%Y%m%d-%H%M)"}
 
 MODEL_NAME="LiquidAI/LFM2.5-VL-1.6B"
 target_modules="q_proj,k_proj,v_proj,out_proj,in_proj,w1,w2,w3"
@@ -68,7 +69,7 @@ mpirun --mca mpi_abort_print_stack 1 \
                 echo "Running on rank $RANK out of $WORLD_SIZE"; \
                 '"${PYTHON_PATH}"' -m src.cli train \
                     --timestamp '"${timestamp}"' \
-                    --output_dir "output_go" \
+                    --output_dir '"${output_dir}"' \
                     --dataset_name '"${DATASET}"' \
                     --model_name '"${MODEL_NAME}"' \
                     --seed '"${SEED}"' \
@@ -76,28 +77,32 @@ mpirun --mca mpi_abort_print_stack 1 \
                     --per_device_batch_size 4 \
                     --num_train_epochs 2 \
                     --learning_rate 5e-4 \
-                    --weight_decay 0.01 \
+                    --weight_decay 0.0 \
                     --warmup_ratio 0.03 \
                     --target_modules '"${target_modules}"' \
                     --lora_r 16 \
-                    --lora_alpha 1 \
+                    --lora_alpha 32 \
                     --lora_dropout 0.0 \
                     --lora_bias none \
                     --peft_variant lora \
                     --init_lora_weights '"${init_lora_weights}"' \
                     --init_num_samples 2048 \
                     --init_batch_size 1 \
-                    --eval_steps 100 \
+                    --eval_steps 200 \
                     --eval_batch_size 4 \
-                    --logging_steps 50 \
+                    --logging_steps 100 \
                     --use_cleaned_svd_ref_trainer '"${use_cleaned_svd_ref_trainer}"' \
-                    --repeat_n 1 \
+                    --repeat_n 3 \
+                    --adjust_lora_alpha_at [0] \
+                    --min_alpha_ratio 0.70 \
+                    --max_alpha_ratio 1.15 \
                     --repeat_warmup_ratio 0.03 \
                     --repeat_decay_ratio 0.03 \
                     --repeat_end_lr_rate 0.97 \
                     --final_warmup_ratio 0.03 \
-                    --use_wandb True \
-                    --wandb_online True \
                     --load_best_model_at_end False \
                     --skip_eval False \
+                    --use_wandb True \
+                    --wandb_online True \
                     '
+                    

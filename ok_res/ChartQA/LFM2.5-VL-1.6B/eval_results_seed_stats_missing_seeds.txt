@@ -1,0 +1,32 @@
+input_csv: /work/xg24i002/x10041/lora_vqa/ok_res/ChartQA/LFM2.5-VL-1.6B/eval_results.csv
+output_csv: /work/xg24i002/x10041/lora_vqa/ok_res/ChartQA/LFM2.5-VL-1.6B/eval_results_seed_stats.csv
+value_column: metric_exact_match
+all_seeds(3): 11, 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=corda, extra=none, r=16, lora_alpha=1
+missing_seeds(1): 11
+
+base_model=LFM2.5-VL-1.6B, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=gaussian, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=gaussian, extra=sr#3rp, r=16, lora_alpha=1
+missing_seeds(1): 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=kaiming, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=kaiming, extra=sr#3rp, r=16, lora_alpha=1
+missing_seeds(2): 11, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=olora, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=olora, extra=sr#3rp, r=16, lora_alpha=1
+missing_seeds(2): 11, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=orthogonal, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=orthogonal, extra=sr#3rp, r=16, lora_alpha=1
+missing_seeds(2): 11, 37
+

@@ -1,0 +1,20 @@
+input_csv: /work/xg24i002/x10041/lora_vqa/ok_res/ChartQA/Ministral-3-3B-Instruct-2512-BF16/eval_results.csv
+output_csv: /work/xg24i002/x10041/lora_vqa/ok_res/ChartQA/Ministral-3-3B-Instruct-2512-BF16/eval_results_seed_stats.csv
+value_column: metric_exact_match
+all_seeds(3): 11, 23, 37
+
+base_model=Ministral-3-3B-Instruct-2512-BF16, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=corda, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=Ministral-3-3B-Instruct-2512-BF16, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=gaussian, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=Ministral-3-3B-Instruct-2512-BF16, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=kaiming, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=Ministral-3-3B-Instruct-2512-BF16, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=olora, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=Ministral-3-3B-Instruct-2512-BF16, dataset_name=HuggingFaceM4/ChartQA, init_lora_weights=orthogonal, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+

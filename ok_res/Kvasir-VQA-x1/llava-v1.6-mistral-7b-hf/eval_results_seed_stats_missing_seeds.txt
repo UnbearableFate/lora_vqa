@@ -1,0 +1,8 @@
+input_csv: /work/xg24i002/x10041/lora_vqa/experiments/Kvasir-VQA-x1/llava-v1.6-mistral-7b-hf/eval_results.csv
+output_csv: /work/xg24i002/x10041/lora_vqa/experiments/Kvasir-VQA-x1/llava-v1.6-mistral-7b-hf/eval_results_seed_stats.csv
+value_column: metric_llm_score_0_10_avg
+all_seeds(3): 11, 23, 37
+
+base_model=llava-v1.6-mistral-7b-hf, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=gaussian, extra=sr#3rp#at0#min0.8#max1.5, r=16, lora_alpha=1
+missing_seeds(1): 11
+

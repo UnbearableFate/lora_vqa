@@ -45,3 +45,5 @@ data
 cache
 output**
 experiments**
+model_cache
+ok_res/**/*.json*

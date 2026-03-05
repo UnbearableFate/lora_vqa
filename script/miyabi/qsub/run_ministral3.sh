@@ -31,16 +31,17 @@ else
     export OMPI_MCA_mca_base_env_list="${ENV_LIST}"
 fi
 
-PYTHON_PATH="/work/xg24i002/x10041/my_peft/torch291/bin/python"
+PYTHON_PATH="/work/xg24i002/x10041/peft/.venv/bin/python"
 
 HF_HOME="/work/xg24i002/x10041/hf_home"
 HF_DATASETS_CACHE="/work/xg24i002/x10041/data"
 export HF_HOME HF_DATASETS_CACHE
 
 DATASET=${DATASET:-"HuggingFaceM4/ChartQA"}
-SEED=${SEED:-11}
-use_cleaned_svd_ref_trainer=${use_cleaned_svd_ref_trainer:-True}
+SEED=${SEED:-23}
+use_cleaned_svd_ref_trainer=${use_cleaned_svd_ref_trainer:-False}
 init_lora_weights=${init_lora_weights:-gaussian}
+output_dir=${output_dir:-"output_llava_hosoku"}
 
 #MODEL_NAME="mistralai/Ministral-3-8B-Instruct-2512-BF16"
 MODEL_NAME="mistralai/Ministral-3-3B-Instruct-2512-BF16"
@@ -69,7 +70,7 @@ mpirun --mca mpi_abort_print_stack 1 \
                 echo "Running on rank $RANK out of $WORLD_SIZE"; \
                 '"${PYTHON_PATH}"' -m src.cli train \
                     --timestamp '"${timestamp}"' \
-                    --output_dir "output_many" \
+                    --output_dir '"${output_dir}"' \
                     --dataset_name '"${DATASET}"' \
                     --model_name '"${MODEL_NAME}"' \
                     --seed '"${SEED}"' \
@@ -93,11 +94,12 @@ mpirun --mca mpi_abort_print_stack 1 \
                     --logging_steps 50 \
                     --use_cleaned_svd_ref_trainer '"${use_cleaned_svd_ref_trainer}"' \
                     --repeat_n 3 \
+                    --max_alpha_ratio 1.5 \
                     --repeat_warmup_ratio 0.03 \
                     --repeat_decay_ratio 0.03 \
                     --repeat_end_lr_rate 0.97 \
                     --final_warmup_ratio 0.03 \
-                    --use_wandb True \
-                    --wandb_online True \
-                    --skip_eval False \
+                    --load_best_model_at_end False \
+                    --skip_eval True \
                     '
+                    #--adjust_lora_alpha_at [0] \

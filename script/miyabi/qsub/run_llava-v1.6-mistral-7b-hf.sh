@@ -2,7 +2,7 @@
 #PBS -q regular-g
 #PBS -W group_list=xg24i002
 #PBS -l select=16:mpiprocs=1
-#PBS -l walltime=03:00:00
+#PBS -l walltime=04:00:00
 #PBS -j oe
 #PBS -m abe
 
@@ -31,7 +31,7 @@ else
     export OMPI_MCA_mca_base_env_list="${ENV_LIST}"
 fi
 
-PYTHON_PATH="/work/xg24i002/x10041/my_peft/torch291/bin/python"
+PYTHON_PATH="/work/xg24i002/x10041/peft/.venv/bin/python"
 
 HF_HOME="/work/xg24i002/x10041/hf_home"
 HF_DATASETS_CACHE="/work/xg24i002/x10041/data"
@@ -40,8 +40,8 @@ export HF_HOME HF_DATASETS_CACHE
 DATASET=${DATASET:-"HuggingFaceM4/ChartQA"}
 SEED=${SEED:-11}
 use_cleaned_svd_ref_trainer=${use_cleaned_svd_ref_trainer:-True}
-init_lora_weights=${init_lora_weights:-True}
-output_dir=${output_dir:-"output_test"}
+init_lora_weights=${init_lora_weights:-gaussian}
+output_dir=${output_dir:-"output_llava_hosoku"}
 
 MODEL_NAME="llava-hf/llava-v1.6-mistral-7b-hf"
 target_modules="k_proj,v_proj,q_proj,out_proj,fc1,fc2,linear_1,linear_2,o_proj,gate_proj,up_proj,down_proj"
@@ -88,16 +88,17 @@ mpirun --mca mpi_abort_print_stack 1 \
                     --init_lora_weights '"${init_lora_weights}"' \
                     --init_num_samples 2048 \
                     --init_batch_size 1 \
-                    --eval_steps 100 \
+                    --eval_steps 200 \
                     --eval_batch_size 2 \
                     --logging_steps 50 \
                     --use_cleaned_svd_ref_trainer '"${use_cleaned_svd_ref_trainer}"' \
-                    --repeat_n 1 \
+                    --repeat_n 3 \
+                    --adjust_lora_alpha_at [0] \
+                    --max_alpha_ratio 1.5 \
                     --repeat_warmup_ratio 0.03 \
                     --repeat_decay_ratio 0.03 \
                     --repeat_end_lr_rate 0.97 \
                     --final_warmup_ratio 0.03 \
-                    --use_wandb True \
-                    --wandb_online True \
-                    --skip_eval False \
+                    --load_best_model_at_end False \
+                    --skip_eval True \
                     '

@@ -31,7 +31,7 @@ else
     export OMPI_MCA_mca_base_env_list="${ENV_LIST}"
 fi
 
-PYTHON_PATH="/work/xg24i002/x10041/my_peft/torch291/bin/python"
+PYTHON_PATH="/work/xg24i002/x10041/peft/.venv/bin/python"
 
 HF_HOME="/work/xg24i002/x10041/hf_home"
 HF_DATASETS_CACHE="/work/xg24i002/x10041/data"
@@ -41,6 +41,7 @@ DATASET=${DATASET:-"SimulaMet/Kvasir-VQA-x1"}
 SEED=${SEED:-11}
 use_cleaned_svd_ref_trainer=${use_cleaned_svd_ref_trainer:-False}
 init_lora_weights=${init_lora_weights:-orthogonal}
+output_dir=${output_dir:-"output_go"}
 
 MODEL_NAME="llava-hf/vip-llava-7b-hf"
 target_modules="q_proj,k_proj,v_proj,out_proj,gate_proj,up_proj,down_proj,fc,linear,lm_head"
@@ -67,7 +68,7 @@ mpirun --mca mpi_abort_print_stack 1 \
                 echo "Running on rank $RANK out of $WORLD_SIZE"; \
                 '"${PYTHON_PATH}"' -m src.cli train \
                     --timestamp '"${timestamp}"' \
-                    --output_dir "output_go" \
+                    --output_dir '"${output_dir}"' \
                     --dataset_name '"${DATASET}"' \
                     --model_name '"${MODEL_NAME}"' \
                     --seed '"${SEED}"' \

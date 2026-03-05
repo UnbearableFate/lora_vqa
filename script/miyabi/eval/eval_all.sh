@@ -2,7 +2,7 @@
 
 eval_scripts="/work/xg24i002/x10041/lora_vqa/script/miyabi/eval/eval.sh"
 
-adapter_root_path="/work/xg24i002/x10041/lora_vqa/output_test"
+adapter_root_path="/work/xg24i002/x10041/lora_vqa/output_chartqa_20260219-23/ChartQA/llava-v1.6-mistral-7b-hf/r16"
 
 for adapter_dir in "${adapter_root_path}"/*; do
     if [[ -d "${adapter_dir}" ]]; then

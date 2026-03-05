@@ -1,0 +1,32 @@
+input_csv: ok_res/Kvasir-VQA-x1/LFM2.5-VL-1.6B/eval_results.csv
+output_csv: ok_res/Kvasir-VQA-x1/LFM2.5-VL-1.6B/eval_results_seed_stats.csv
+value_column: metric_llm_score_0_10_avg
+all_seeds(3): 11, 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=gaussian, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=gaussian, extra=sr#3rp, r=16, lora_alpha=1
+missing_seeds(1): 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=kaiming, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(1): 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=kaiming, extra=sr#3rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=olora, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=olora, extra=sr#3rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=orthogonal, extra=sr#1rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=orthogonal, extra=sr#3rp, r=16, lora_alpha=1
+missing_seeds(2): 23, 37
+
+base_model=LFM2.5-VL-1.6B, dataset_name=SimulaMet/Kvasir-VQA-x1, init_lora_weights=orthogonal, extra=sr#3rp#at0#min0.8#max1.5, r=16, lora_alpha=1
+missing_seeds(1): 37
+

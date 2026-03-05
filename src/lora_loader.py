@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
 import inspect
+import os
 from pathlib import Path
 import re
 import time
@@ -32,7 +33,12 @@ except Exception:  # pragma: no cover
     CordaConfig = None
     EvaConfig = None
 
-from my_peft import LoraGAConfig
+try:  # optional, only needed for init_lora_weights="lora_ga"
+    from peft.tuners.lora import preprocess_loraga  # type: ignore
+    from peft.tuners.lora.config import LoraGAConfig  # type: ignore
+except Exception:  # pragma: no cover
+    preprocess_loraga = None
+    LoraGAConfig = None
 from accelerate import Accelerator 
 
 import logging
@@ -113,8 +119,9 @@ class LoraHyperparameters:
     init_batch_size: int = 8
     corda_method: str = "kpm"  # kpm or ipm
 
-    loraga_direction : str = "ArB2r"  # ArB2r, A2rB, BrA2r
-    loraga_dtype : torch.dtype = torch.float32
+    loraga_direction : str = "ArB2r"  # ArBr, A2rBr, ArB2r, random
+    loraga_scale: str = "stable"  # stable, weight_svd, gd_scale, unit
+    loraga_stable_gamma: int = 16
     exclude_modules: Optional[Union[List[str], str]] = None
 
     cache_dir: Optional[str] = "data_cache"
@@ -165,8 +172,11 @@ def build_LoraHyperparameters_from_yaml_dict(cfg_dict) -> LoraHyperparameters:
         init_batch_size= lora_init_kwargs.get('init_batch_size', 8),
 
         corda_method= lora_init_kwargs.get('corda_method', "kpm"),
-        loraga_direction= lora_init_kwargs.get('loraga_direction', "ArB2r") if loraga_config else "ArB2r",
-        loraga_dtype= torch.float32,
+        loraga_direction= lora_init_kwargs.get("loraga_direction", loraga_config.get("direction", "ArB2r")),
+        loraga_scale= lora_init_kwargs.get("loraga_scale", loraga_config.get("scale", "stable")),
+        loraga_stable_gamma= int(
+            lora_init_kwargs.get("loraga_stable_gamma", loraga_config.get("stable_gamma", 16))
+        ),
         
         cache_dir= peft_config.get('cache_dir', "data_cache"),
         exclude_modules= peft_config.get("exclude_modules", None),
@@ -176,7 +186,7 @@ def build_LoraHyperparameters_from_yaml_dict(cfg_dict) -> LoraHyperparameters:
         init_seed= lora_init_kwargs.get('init_seed', cfg_dict['training'].get("seed", 42) *2 +1),
     )
 
-def get_lora_config(lora_cfg: LoraHyperparameters) -> LoraConfig | LoraGAConfig:
+def get_lora_config(lora_cfg: LoraHyperparameters) -> LoraConfig:
     variant = lora_cfg.variant.lower()
     if variant not in _VARIANT_TO_FLAGS:
         raise ValueError(f"Unsupported LoRA variant: {variant}")
@@ -214,43 +224,55 @@ def get_lora_config(lora_cfg: LoraHyperparameters) -> LoraConfig | LoraGAConfig:
         )
         
     else:
-        peft_config = LoraGAConfig(
+        if LoraGAConfig is None:
+            raise ImportError("init_lora_weights='lora_ga' requires a PEFT build that ships LoraGAConfig.")
+        lora_ga_config = LoraGAConfig(
+            direction=lora_cfg.loraga_direction,
+            scale=lora_cfg.loraga_scale,
+            stable_gamma=lora_cfg.loraga_stable_gamma,
+        )
+        peft_config = LoraConfig(
             r=lora_cfg.r,
             lora_alpha=lora_cfg.alpha,
             lora_dropout=lora_cfg.dropout,
             bias=lora_cfg.bias,
             target_modules=list(lora_cfg.target_modules),
+            exclude_modules=lora_cfg.exclude_modules,
             task_type=lora_cfg.task_type,
-            bsz=lora_cfg.init_batch_size,
-            direction=lora_cfg.loraga_direction,
-            dtype= lora_cfg.loraga_dtype,
-            gradient_save_path=lora_cfg.get_unique_cache_path("loraga_gradient"),
+            init_lora_weights="lora_ga",
+            lora_ga_config=lora_ga_config,
+            ensure_weight_tying=lora_cfg.ensure_weight_tying,
+            modules_to_save=lora_cfg.modules_to_save,
             **_VARIANT_TO_FLAGS[variant],
         )
+        if lora_cfg.unique_cache_filename:
+            peft_config._loraga_cache_file = lora_cfg.get_unique_cache_path("loraga_gradient")
     
     return peft_config
 
 """use the following function in VLM training script
 """
 
-def attach_vlm_lora_adapter(base_model,lora_cfg: LoraConfig|LoraGAConfig, train_dataset,data_collator, init_num_samples:int, batch_size:int,seed: int, accelerator: Accelerator, save_dir: Path = None):
+def attach_vlm_lora_adapter(base_model,lora_cfg: LoraConfig, train_dataset,data_collator, init_num_samples:int, batch_size:int,seed: int, accelerator: Accelerator, base_model_save_path: Path = None):
+    peft_model = None
     if lora_cfg.init_lora_weights not in ["corda", "eva", "lora_ga"]:
-        return get_peft_model(base_model, lora_cfg)
-    sub_dataset = _select_init_subset(train_dataset, init_num_samples, seed)
-    if sub_dataset is None:
-        return get_peft_model(base_model, lora_cfg)
-
-    if lora_cfg.init_lora_weights == "corda":
-        return get_peft_model_with_corda(base_model, lora_cfg, sub_dataset,data_collator,accelerator=accelerator)
-    elif lora_cfg.init_lora_weights == "eva":
-        return get_peft_model_with_eva(base_model, lora_cfg, sub_dataset,data_collator ,batch_size ,accelerator=accelerator)
-    elif lora_cfg.init_lora_weights == "lora_ga":
-        return get_peft_model_with_lora_ga(base_model, lora_cfg, sub_dataset,data_collator ,batch_size,accelerator=accelerator)
+        peft_model = get_peft_model(base_model, lora_cfg)
+    else:
+        sub_dataset = _select_init_subset(train_dataset, init_num_samples, seed)
+        if sub_dataset is None:
+            raise ValueError("init_num_samples must be > 0 and train_dataset must have a known length or support shuffling/selecting.")
+        if lora_cfg.init_lora_weights == "corda":
+            peft_model = get_peft_model_with_corda(base_model, lora_cfg, sub_dataset,data_collator,accelerator=accelerator)
+        elif lora_cfg.init_lora_weights == "eva":
+            peft_model = get_peft_model_with_eva(base_model, lora_cfg, sub_dataset,data_collator ,batch_size ,accelerator=accelerator)
+        elif lora_cfg.init_lora_weights == "lora_ga":
+            peft_model = get_peft_model_with_lora_ga(base_model, lora_cfg, sub_dataset,data_collator ,batch_size,accelerator=accelerator)
+    return peft_model
 
 """
 use the following function in language modeling training script
 """
-def attach_lora_adapter(base_model,lora_cfg: LoraConfig|LoraGAConfig, train_dataset,data_collator, init_num_samples:int, batch_size:int,seed: int, accelerator: Accelerator, save_dir: Path = None):
+def attach_lora_adapter(base_model,lora_cfg: LoraConfig, train_dataset,data_collator, init_num_samples:int, batch_size:int,seed: int, accelerator: Accelerator, save_dir: Path = None):
     if lora_cfg.init_lora_weights not in ["corda", "eva", "lora_ga"]:
         return get_peft_model(base_model, lora_cfg)
     sub_dataset = _select_init_subset(train_dataset, init_num_samples, seed)
@@ -320,13 +342,17 @@ def get_peft_model_with_corda(base_model,lora_cfg: LoraConfig,sub_dataset,data_c
     )
 
     # CorDA in current PEFT assumes 2D activations in covariance hooks.
-    # Vision-tower attention often feeds 3D tensors and can crash (`t()` on 3D).
-    # For VLM conversational batches, exclude vision tower modules from CorDA init.
+    # Some VLM branches (vision tower / multimodal projector) can feed 3D tensors
+    # even with batch_size=1 and crash on `input.t()`.
+    # For VLM conversational batches, exclude these branches from CorDA init.
     if is_vlm_batch:
         target_modules = lora_cfg.target_modules
-        vision_excludes: List[str] = []
+        unsupported_prefixes = ("vision_tower", "vision_resampler", "multi_modal_projector")
+        corda_excludes: List[str] = []
         for name, module in base_model.named_modules():
-            if "vision_tower" not in name or not isinstance(module, torch.nn.Linear):
+            if not isinstance(module, torch.nn.Linear):
+                continue
+            if not any(prefix in name for prefix in unsupported_prefixes):
                 continue
             target_hit = False
             if isinstance(target_modules, str):
@@ -334,17 +360,17 @@ def get_peft_model_with_corda(base_model,lora_cfg: LoraConfig,sub_dataset,data_c
             elif isinstance(target_modules, (list, tuple, set)):
                 target_hit = (name in target_modules) or any(name.endswith(f".{t}") for t in target_modules)
             if target_hit:
-                vision_excludes.append(name)
-        if vision_excludes:
+                corda_excludes.append(name)
+        if corda_excludes:
             if lora_cfg.exclude_modules is None:
-                lora_cfg.exclude_modules = list(dict.fromkeys(vision_excludes))
+                lora_cfg.exclude_modules = list(dict.fromkeys(corda_excludes))
             elif isinstance(lora_cfg.exclude_modules, str):
-                escaped = "|".join(re.escape(m) for m in vision_excludes)
+                escaped = "|".join(re.escape(m) for m in corda_excludes)
                 lora_cfg.exclude_modules = f"(?:{lora_cfg.exclude_modules})|(?:{escaped})"
             else:
-                merged = list(lora_cfg.exclude_modules) + vision_excludes
+                merged = list(lora_cfg.exclude_modules) + corda_excludes
                 lora_cfg.exclude_modules = list(dict.fromkeys(merged))
-            print(f"CorDA VLM mode: excluded {len(vision_excludes)} vision-tower target modules.")
+            print(f"CorDA VLM mode: excluded {len(corda_excludes)} unsupported VLM target modules.")
 
     device = accelerator.device if accelerator is not None else next(base_model.parameters()).device
 
@@ -425,6 +451,20 @@ def get_peft_model_with_eva(
             return model(**model_input)
         return model(model_input)
 
+    def _prepare_layer_inputs_fn_vlm(layer_input, _model_input, layer_name):
+        if isinstance(layer_input, torch.Tensor):
+            x = layer_input
+        elif isinstance(layer_input, (tuple, list)) and len(layer_input) > 0:
+            x = layer_input[0]
+        else:
+            raise ValueError(
+                f"unsupported input type {type(layer_input)} for prepare_layer_inputs_fn in layer {layer_name}"
+            )
+        if x.ndim > 2:
+            # EVA default uses `.view`, which fails on non-contiguous activations seen in some VLM blocks.
+            x = x.reshape(-1, x.size(-1))
+        return x
+
     sub_dataset_columns = set(getattr(sub_dataset, "column_names", []) or [])
     collator_name = type(data_collator).__name__.lower()
     is_vlm_batch = {"messages", "images"}.issubset(sub_dataset_columns) or (
@@ -447,7 +487,10 @@ def get_peft_model_with_eva(
         if is_vlm_batch and "prepare_model_inputs_fn" in sig.parameters:
             init_kwargs["prepare_model_inputs_fn"] = None
         if is_vlm_batch and "prepare_layer_inputs_fn" in sig.parameters:
-            init_kwargs["prepare_layer_inputs_fn"] = None
+            init_kwargs["prepare_layer_inputs_fn"] = _prepare_layer_inputs_fn_vlm
+        if "gather_distributed_inputs" in sig.parameters and torch.distributed.is_initialized():
+            # This dataloader is not rank-sharded, so gathering would duplicate inputs across ranks.
+            init_kwargs["gather_distributed_inputs"] = False
     except Exception:  # pragma: no cover
         pass
 
@@ -469,38 +512,64 @@ __all__ = [
 
 def get_peft_model_with_lora_ga(
         model,
-        lora_ga_cfg: LoraGAConfig,
+        lora_ga_cfg: LoraConfig,
         sub_dataset,
         data_collator,
         batch_size: int,
         accelerator,
     ):
+    if preprocess_loraga is None:
+        raise ImportError("init_lora_weights='lora_ga' requires a PEFT build that exports preprocess_loraga.")
 
-    from my_peft.utils.lora_ga_utils import (
-                LoraGAContext,
-                estimate_gradient,
-            )
-    from my_peft import get_peft_model as my_get_peft_model
+    device = accelerator.device if accelerator is not None else next(model.parameters()).device
+
+    def _collate_to_device(features: List[Dict[str, Any]]) -> Dict[str, Any]:
+        batch = data_collator(features)
+        return {k: (v.to(device) if hasattr(v, "to") else v) for k, v in batch.items()}
 
     gradient_loader = DataLoader(
         dataset=sub_dataset,
         batch_size=batch_size,
         shuffle=False,
-        collate_fn=data_collator,
+        collate_fn=_collate_to_device,
     )
-    named_grad = estimate_gradient(
-        model=model,
-        dataloader=gradient_loader,
-        accelerator=accelerator,
-        quant_flag=True,
-        origin_type="bf16",
-        quant_type="int8",
-        no_split_module_classes=None,
-        grad_save_path=lora_ga_cfg.gradient_save_path,
-    )
+    if accelerator is not None:
+        model.to(accelerator.device)
+
+    def _train_step():
+        for batch in tqdm.tqdm(gradient_loader, desc="lora_ga preprocessing"):
+            outputs = model(**batch)
+            loss = outputs.loss if hasattr(outputs, "loss") else outputs[0]
+            if accelerator is not None:
+                accelerator.backward(loss)
+            else:
+                loss.backward()
+
+    cache_file = getattr(lora_ga_cfg, "_loraga_cache_file", None)
+    def _run_loraga_preprocess(local_cache_file: Optional[str]) -> None:
+        model.zero_grad(set_to_none=True)
+        preprocess_loraga(model, lora_ga_cfg, train_step=_train_step, cache_file=local_cache_file)
+
     start_time = time.time()
-    with LoraGAContext(model=model, named_grad=named_grad):
-        model = my_get_peft_model(model=model, peft_config=lora_ga_cfg)
+    try:
+        _run_loraga_preprocess(cache_file)
+    except KeyError as err:
+        if cache_file is None:
+            raise
+        logger.warning(
+            "Detected stale/incompatible LoRA-GA cache at %s (%s). Rebuilding gradient cache.",
+            cache_file,
+            err,
+        )
+        if accelerator is None or accelerator.is_main_process:
+            try:
+                Path(cache_file).unlink(missing_ok=True)
+            except Exception as unlink_err:
+                logger.warning("Failed to remove stale LoRA-GA cache %s: %s", cache_file, unlink_err)
+        if accelerator is not None:
+            accelerator.wait_for_everyone()
+        _run_loraga_preprocess(cache_file)
+    model = get_peft_model(model=model, peft_config=lora_ga_cfg)
     logger.info(f"LoRA-GA initialization took {time.time() - start_time:.2f} seconds")
     
     return model

@@ -1,0 +1,12 @@
+base_model,dataset_name,init_lora_weights,extra,r,lora_alpha,seed_count,row_count,metric_llm_score_0_10_avg_mean,metric_llm_score_0_10_avg_std
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,olora,sr#3rp#at0#min0.8#max1.5,32,2,2,2,9.17935,0.01288
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,gaussian,sr#3rp#at0#min0.8#max1.5,16,1,2,2,9.17336,0.02444
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,kaiming,sr#3rp#at0#min0.8#max1.5,16,1,3,3,9.15932,0.01177
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,orthogonal,sr#3rp#at0#min0.8#max1.5,16,1,3,3,9.15644,0.01210
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,corda,none,32,2,3,3,9.15120,0.03882
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,orthogonal,none,16,1,3,3,9.11723,0.01573
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,gaussian,none,16,1,3,3,9.11374,0.00530
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,olora,none,32,2,3,3,9.08658,0.00691
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,kaiming,none,16,1,3,3,9.05810,0.01902
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,eva,none,16,1,3,3,9.00997,0.02549
+Ministral-3-3B-Instruct-2512-BF16,SimulaMet/Kvasir-VQA-x1,pissa,none,32,2,3,3,8.80443,0.30632

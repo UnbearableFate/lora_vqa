@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import os
 from typing import Optional, Sequence, Union
 
 from accelerate import Accelerator
@@ -24,6 +25,8 @@ from .cleaned_svd_ref_trainer import get_cleaned_svd_ref_trainer
 import logging
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
+
+init_method_need_conversion = {"lora_ga", "corda", "olora","pissa"}
 
 def _parse_list(value: Union[str, Sequence[str], None]) -> Optional[list[str]]:
     if value is None:
@@ -109,7 +112,7 @@ def train(
     gradient_checkpointing: bool = False,
     cache_dir: Optional[str] = None,
     use_cleaned_svd_ref_trainer: bool = False,
-    adjust_lora_alpha_at: Union[str, Sequence[int]] = (2,),
+    adjust_lora_alpha_at: Union[str, Sequence[int]] = [],
     min_alpha_ratio: float = 0.8,
     max_alpha_ratio: float = 1.25,
     repeat_n: int = 1,
@@ -129,6 +132,9 @@ def train(
 ):
     accelerator = Accelerator()
     set_seed(seed)
+    if seed > 20:
+        use_wandb = False
+        wandb_online = False
     if str(use_cleaned_svd_ref_trainer).lower() in ["1", "true", "yes", "y", "on"]:
         use_cleaned_svd_ref_trainer = True
     else:
@@ -177,6 +183,8 @@ def train(
         use_cleaned_svd_ref_trainer=use_cleaned_svd_ref_trainer,
         repeat_n=repeat_n,
         adjust_lora_alpha_at=parsed_adjust_lora_alpha_at,
+        min_alpha_ratio=min_alpha_ratio,
+        max_alpha_ratio=max_alpha_ratio, 
         timestamp=timestamp,
     )
 
@@ -297,13 +305,15 @@ def train(
         batch_size=init_batch_size,
         seed=effective_init_seed,
         accelerator=accelerator,
+        base_model_save_path=resolved_output_dir,
     )
 
-    if hasattr(model, "print_trainable_parameters"):
-        model.print_trainable_parameters()
     if accelerator.is_main_process:
-        with open(f"/work/xg24i002/x10041/lora_vqa/model_strcut/{model_name.replace('/', '_')}_lora_hyperparameters.txt", "w") as f:
+        if hasattr(model, "print_trainable_parameters"):
+            model.print_trainable_parameters()
+        with open(f"/work/xg24i002/x10041/lora_vqa/model_strcut/{model_name.replace('/', '_').replace('.', '-')}_lora_hyperparameters.txt", "w") as f:
             f.write(str(model))
+        model.save_pretrained(os.path.join(resolved_output_dir, "initial_peft_model"))
 
     world_size = accelerator.num_processes
     gradient_accumulation_steps = max(1, global_batch_size // max(1, per_device_batch_size * world_size))
@@ -365,7 +375,8 @@ def train(
             processing_class=processor,
             data_collator=collator,
             global_batch_size=global_batch_size,
-            adjust_lora_alpha_at=parsed_adjust_lora_alpha_at or [2],
+            basic_alpha=lora_alpha,
+            adjust_lora_alpha_at=parsed_adjust_lora_alpha_at or [],
             min_alpha_ratio=min_alpha_ratio,
             max_alpha_ratio=max_alpha_ratio,
             repeat_n=repeat_n,
@@ -374,6 +385,8 @@ def train(
             repeat_end_lr_rate=repeat_end_lr_rate,
             final_warmup_ratio=final_warmup_ratio,
             min_lr_rate=min_lr_rate,
+            repeat_decay_type=lr_scheduler_type,
+            final_decay_type=lr_scheduler_type,
             warmup_start_lr_rate=warmup_start_lr_rate,
             first_warmup_start_lr_rate=first_warmup_start_lr_rate,
             last_epoch=last_epoch,
@@ -386,12 +399,19 @@ def train(
             eval_dataset=val_dataset if not skip_eval else None,
             processing_class=processor,
         )
-
     if compile_model and hasattr(torch, "compile"):
         trainer.model = torch.compile(trainer.model)
+    accelerator.wait_for_everyone()
     trainer.train()
-    trainer.save_model(resolved_output_dir)
-    processor.save_pretrained(resolved_output_dir)
+    if hasattr(trainer, "merge_lora_alpha"):
+        trainer.merge_lora_alpha()
     if accelerator.is_main_process:
+        if init_lora_weights in init_method_need_conversion :
+            trainer.model.save_pretrained(resolved_output_dir, path_initial_model_for_weight_conversion=os.path.join(resolved_output_dir, "initial_peft_model"))
+        else:
+            trainer.save_model()
         print(f"TRAIN_OUTPUT_DIR\t{resolved_output_dir}", flush=True)
         print(f"Training complete at {timestamp} -> {resolved_output_dir}")
+
+    accelerator.wait_for_everyone()
+    accelerator.end_training()
